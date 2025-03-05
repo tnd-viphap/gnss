@@ -8,7 +8,6 @@ class FTPDownloader:
         self.ftp.set_pasv(False)
         self.credentials = credentials
         self.connect()
-        #self.ftp.dir()
 
     def connect(self):
         """Connect to FTP server"""
@@ -43,7 +42,9 @@ class FTPDownloader:
 
             result = []
             for file in files:
-                if helpers.check_file_name_exists_in_dir(file, local_dir):
+                local_file_path = os.path.join(local_dir, file)
+                # Check if file exists and is not empty
+                if os.path.exists(local_file_path) and os.path.getsize(local_file_path) > 0:
                     continue
                 if file.startswith(prefix):
                     result.append(os.path.join(remote_dir, file))
@@ -69,8 +70,11 @@ class FTPDownloader:
         """Download multiple files"""
         for remote_path, local_path in zip(remote_file_paths, local_file_paths):
             index = remote_file_paths.index(remote_path)
-            if not os.path.exists(local_path):
+            # Check if file exists and is not empty
+            if not (os.path.exists(local_path) and os.path.getsize(local_path) > 0):
                 self.download_file(index, remote_path, local_path)
+            else:
+                print(f"[{index}] File already exists: {os.path.basename(local_path)}")
 
     def download_file(self, index, remote_file_path, local_file_path):
         """Download single file with basic error handling"""
