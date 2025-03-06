@@ -232,14 +232,15 @@ class GNSSProcessor:
         merged_df.to_csv(output_file, index=False)
 
 if __name__ == "__main__":
-    print("Step 1: Initializing...")
+    print("Step 1: Initializing...\n")
     processor = GNSSProcessor()
     
-    print("Step 2: Fetch and Pre-process Base...")
-    processor.process_base_files()
-    '''
-    print("Step 3: Fetch and Pre-process data from Rover1...")
+    #print("Step 2: Fetch and Pre-process Base...\n")
+    #processor.process_base_files()
+    
+    print("Step 3: Fetch and Pre-process data from Rover1...\n")
     processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    '''
     print("Step 4: Fetch and Pre-process data from Rover2...")
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     print("Step 5: Converting Rover1 raw data into POS data...")
