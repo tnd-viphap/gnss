@@ -1,0 +1,142 @@
+import os
+import subprocess
+import json
+import time
+import common.parser as cfg
+import common.helpers as helpers
+from datetime import datetime
+
+class TPS2RINProcessor:
+    def __init__(self):
+        self.cur_dir = os.path.dirname(os.path.abspath(__file__))
+        self.bin_file = os.path.join(self.cur_dir, "tps2rin.exe")
+
+    def get_tps_file_names(self, dir_path):
+        """
+        Extract unique file names from directory without extensions
+        """
+        file_names = []
+        with os.scandir(dir_path) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    file_name = os.path.splitext(entry.name)[0]
+                    file_names.append(file_name)
+        return list(set(file_names))
+
+    def process_all_tps_files_in_path(self, input_dir, output_dir, processed_path):
+        """
+        Process all TPS files in the input directory that haven't been processed yet
+        """
+        self._prepare_output_directory(output_dir)
+        last_processed_file_path = self._get_last_processed_file(processed_path)
+        need_process_files = self._get_files_to_process(input_dir, last_processed_file_path)
+        
+        self._process_files(need_process_files, output_dir, processed_path)
+
+    def _prepare_output_directory(self, output_dir):
+        """
+        Create output directory if it doesn't exist and clear its contents
+        """
+        helpers.create_dir_if_not_exists(output_dir)
+        #helpers.clear_folder_content(output_dir)
+
+    def _get_last_processed_file(self, processed_path):
+        """
+        Get the path of the last processed file from the log
+        """
+        if not helpers.check_files_exist([processed_path]):
+            return None
+        with open(processed_path, "r") as log_file:
+            log_json = json.load(log_file)
+            if log_json:
+                return log_json[-1]["file_path"]
+            else:
+                return None
+
+    def _get_files_to_process(self, input_dir, last_processed_file_path):
+        """
+        Get list of files that need to be processed
+        """
+        files = os.listdir(input_dir)
+        need_process_files = []
+        
+        for i in range(len(files)):
+            file_path = os.path.join(input_dir, files[i])
+            if last_processed_file_path and file_path <= last_processed_file_path:
+                break
+            need_process_files.append(file_path)
+        return list(sorted(need_process_files))
+
+    def _process_files(self, files_to_process, output_dir, processed_path):
+        """
+        Process each file and update the log
+        """
+        if os.listdir(output_dir):
+            start_idx = int(os.listdir(output_dir)[-1].split('.')[0][5:7]) + 1
+        else:
+            start_idx = int(files_to_process[0].split('_')[-1][2:4])
+        year = datetime.now().strftime("%Y")[1:]
+        if year.startswith('0'):
+            year = year[1:]
+        for i in range(len(files_to_process)):
+            pattern = files_to_process[i][-1]
+            device = files_to_process[i].split('_')[0].lower()
+            filename_o = f'{device}0{start_idx+i}{pattern}.{year}o' if len(str(start_idx+i)) <= 2 else f'{device}{str(start_idx+i)}{pattern}.{year}o'
+            filename_p = f'{device}0{start_idx+i}{pattern}.{year}p' if len(str(start_idx+i)) <= 2 else f'{device}{str(start_idx+i)}{pattern}.{year}p'
+            if not os.path.exists(os.path.join(output_dir, filename_o)) and not os.path.exists(os.path.join(output_dir, filename_p)):
+                if self._exec_tps2rin(files_to_process[i], output_dir):
+                    self._update_process_log(processed_path, files_to_process[i])
+            else:
+                print(f"-> {files_to_process[i]} processed. Skipping...")
+                continue
+
+    def _exec_tps2rin(self, tps_file_path, output_dir):
+        """
+        Execute the tps2rin command for a single file
+        """
+        try:
+            cmd = f'{self.bin_file} -i "{tps_file_path}" -o "{output_dir}"'
+            error_code = subprocess.call(cmd, shell=cfg.LOGGING)
+            return error_code == 0
+        except Exception as e:
+            print(f"-> Error executing tps2rin: {e}")
+            return False
+
+    def _update_process_log(self, processed_path, file_path):
+        """
+        Append new processed file information to the log file
+        """
+        try:
+            # Read existing log data
+            existing_data = []
+            if os.path.exists(processed_path):
+                with open(processed_path, 'r') as log_file:
+                    try:
+                        existing_data = json.load(log_file)
+                        if not isinstance(existing_data, list):
+                            existing_data = [existing_data]  # Convert single entry to list
+                    except json.JSONDecodeError:
+                        existing_data = []  # Start fresh if file is corrupted
+
+            # Add new entry
+            new_entry = {
+                "file_path": file_path,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            # Append new entry to existing data
+            existing_data.append(new_entry)
+
+            # Write back all data
+            with open(processed_path, 'w') as log_file:
+                json.dump(existing_data, log_file, indent=4)
+
+        except Exception as e:
+            print(f"Error updating process log: {e}")
+
+# Example usage:
+if __name__ == "__main__":
+    processor = TPS2RINProcessor()
+    # Example calls would go here
+    # file_names = processor.get_tps_file_names(input_directory)
+    # processor.process_all_tps_files_in_path(input_dir, output_dir, processed_path)

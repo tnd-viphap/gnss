@@ -1,0 +1,69 @@
+{
+    "data_dir": "C:/Users/ViphapCom2/Documents/GNSS_ViPhap/gnss/data",
+    "rnx2rtkp_config_file": "processing.conf",
+    "logging": true,
+    "ftp": {
+        "base": {
+            "host": "10.0.1.11",
+            "port": 9802,
+            "username": "topcon",
+            "password": "topcon",
+            "passive": "true",
+            "timeout": 6000,
+            "data_dir": "\\",
+            "local_dir": "Base",
+            "prefix": "Base_3600_"
+        },
+        "rovers1": [
+            {
+                "host": "10.0.1.12",
+                "port": 9921,
+                "username": "topcon",
+                "password": "topcon",
+                "passive": "true",
+                "timeout": 6000,
+                "data_dir": "\\",
+                "local_dir": "Rover1",
+                "prefix": "Rover1_3600_"
+            }
+        ],
+        "rovers2": [
+            {
+                "host": "10.0.1.12",
+                "port": 8821,
+                "username": "topcon",
+                "password": "topcon",
+                "passive": "true",
+                "timeout": 6000,
+                "data_dir": "\\",
+                "local_dir": "Rover2",
+                "prefix": "Rover2_3600_"
+            }
+        ]
+    },
+    "data": {
+        "interval": 60,
+        "q_values": [
+            1
+        ],
+        "threshold": 1500,
+        "threshold_delta_x": 100000,
+        "threshold_delta_y": 100000,
+        "threshold_delta_z": 100000,
+        "base": {
+            "lat": 21.13991669,
+            "lon": 106.317556307,
+            "hgt": -10.9022
+        },
+        "rover1": {
+            "east": 116.8744921,
+            "north": -32.92875728,
+            "up": 54.97516147
+        },
+        "rover2": {
+            "east": 170.5924344,
+            "north": -47.33610581,
+            "up": 3.279834111
+        }
+    }
+}
