@@ -8,8 +8,8 @@ import common.helpers as helpers
 import common.parser as cfg
 from modules.datastream.ftp import FTPDownloader
 from modules.datastream.posfile import RTKPos
-from modules.rtklib.rnx2rtkp import RNX2RTKPProcessor
-from modules.rtklib.tps2rin import TPS2RINProcessor
+from modules.rnx2rtkp import RNX2RTKPProcessor
+from modules.tps2rin import TPS2RINProcessor
 
 
 class GNSSProcessor:
@@ -212,20 +212,14 @@ class GNSSProcessor:
                 or abs(averageZ - self.last_z) > cfg.DATA_THRESHOLD_DELTA_Z
             )
         ):
-            if not "{},{},{},{}\n".format(
+            output_file.write(
+                "{},{},{},{}\n".format(
                     ts,
                     "{:.5f}".format(averageX),
                     "{:.5f}".format(averageY),
                     "{:.5f}".format(averageZ)
-                ) in output_file.readlines():
-                output_file.write(
-                    "{},{},{},{}\n".format(
-                        ts,
-                        "{:.5f}".format(averageX),
-                        "{:.5f}".format(averageY),
-                        "{:.5f}".format(averageZ)
-                    )
                 )
+            )
 
     def merge_output_files(self):
         rv1_output = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Rover1/output.csv")
@@ -259,10 +253,9 @@ if __name__ == "__main__":
     print("Step 5: Fetch and Pre-process data from Rover2...")
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
-    #print("Step 6: Converting Rover2 raw data into POS data...")
-    #processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
+    print("Step 6: Converting Rover2 raw data into POS data...")
+    processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
     # print("Step 7: Data assembly")
     # processor.merge_output_files()
     # print("All Processes Done!")
-    

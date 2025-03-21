@@ -81,7 +81,7 @@ class FTPDownloader:
                 result = []
                 for file in files:
                     local_file_path = os.path.join(local_dir, file)
-                    if os.path.exists(local_file_path) and os.path.getsize(local_file_path) > 0:
+                    if os.path.exists(local_file_path) and os.path.getsize(local_file_path) > 2000:
                         continue
                     if file.startswith(prefix):
                         result.append(os.path.join(remote_dir, file))
@@ -97,12 +97,23 @@ class FTPDownloader:
                 else:
                     return []
 
-    def generate_local_file_paths(self, local_dir, remote_file_paths):
+    def generate_local_file_paths(self, local_dir, remote_file_paths, start_date=None, start_time=None):
         """Generate local file paths for downloads"""
         try:
             helpers.create_dir_if_not_exists(local_dir)
-            return [os.path.join(local_dir, os.path.basename(path)) 
-                   for path in remote_file_paths]
+            if start_date:
+                if start_time:
+                    str2search = "_".join(remote_file_paths[0].split("_")[0:2]) + f"_{start_date}{start_time}"
+                    idx = remote_file_paths.index(str2search)
+                else:
+                    start_time = 'a'
+                    str2search = "_".join(remote_file_paths[0].split("_")[0:2]) + f"_{start_date}{start_time}"
+                    idx = remote_file_paths.index(str2search)
+            else:
+                idx = 0
+            remote_file_paths = remote_file_paths[idx:]
+            return idx, [os.path.join(local_dir, os.path.basename(path)) for path in remote_file_paths]
+
         except Exception as e:
             print(f"-> Error generating local paths: {e}")
             return []
@@ -111,7 +122,7 @@ class FTPDownloader:
         """Download multiple files with connection checking"""
         for remote_path, local_path in zip(remote_file_paths, local_file_paths):
             index = remote_file_paths.index(remote_path)
-            if not (os.path.exists(local_path) and os.path.getsize(local_path) > 0):
+            if (not os.path.exists(local_path)) or (os.path.exists(local_path) and float(os.path.getsize(local_path))/1024**2 < 2000):
                 self.download_file_with_retry(index, remote_path, local_path)
             else:
                 print(f"-> File already exists: {os.path.basename(local_path)}")

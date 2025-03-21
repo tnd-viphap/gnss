@@ -6,3 +6,4 @@ modules/__init__.py
 rtklib/__init__.py
 __pycache__
 publishers/
+dev/
