@@ -9,7 +9,7 @@ import common.helpers as helpers
 class RNX2RTKPProcessor:
     def __init__(self):
         self.cur_dir = os.path.split(os.path.abspath(__file__))[0]
-        self.bin_file = os.path.join(self.cur_dir, "rnx2rtkp").replace("\\", "/")
+        self.bin_file = os.path.join(self.cur_dir, "rnx2rtkp.exe").replace("\\", "/")
         self.config_file = os.path.join(self.cur_dir, cfg.RNX2RTKP_CONFIG_FILE).replace("\\", "/")
 
     def generate_input_file_groups(self, base_file_names, rover_processed_dir, base_prefix, rover_prefix):
@@ -60,7 +60,7 @@ class RNX2RTKPProcessor:
 
         if success:
             self._remove_rover_files(group)
-            pass
+            print("Done")
 
     def process_file_group_and_remove(self, group, output_dir):
         """
@@ -88,7 +88,7 @@ class RNX2RTKPProcessor:
         except:
             pass
         os.chdir(self.cur_dir)
-        cmd = f'rnx2rtkp -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_rover_file)[-1]}'
+        cmd = f'{self.bin_file} -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_rover_file)[-1]}'
         error_code = subprocess.call(cmd, shell=cfg.LOGGING)
         try:
             files_to_rm = [os.path.join(self.cur_dir, f).replace("\\", "/") for f in os.listdir(self.cur_dir) if 'base' in f or 'rove' in f]

@@ -32,13 +32,13 @@ class RTKPos:
             log_file = open(log_path, "r")
             log_json = json.load(log_file)
             log_file.close()
-            last_processed_file_path = log_json["file_path"]
+            last_processed_file_path = log_json[0]["file_path"]
 
             need_process_files = []
             for file_path in file_paths:
                 if last_processed_file_path and file_path <= last_processed_file_path:
                     continue
-                need_process_files.append(file_path)
+                need_process_files.append(file_path.replace("\\", "/"))
             return need_process_files
 
         except Exception as e:

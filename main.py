@@ -8,8 +8,8 @@ import common.helpers as helpers
 import common.parser as cfg
 from modules.datastream.ftp import FTPDownloader
 from modules.datastream.posfile import RTKPos
-from modules.rtklib.rnx2rtkp import RNX2RTKPProcessor
-from modules.rtklib.tps2rin import TPS2RINProcessor
+from modules.rnx2rtkp import RNX2RTKPProcessor
+from modules.tps2rin import TPS2RINProcessor
 
 
 class GNSSProcessor:
@@ -247,22 +247,22 @@ if __name__ == "__main__":
     print("Step 1: Initializing...\n")
     processor = GNSSProcessor()
     
-    #print("Step 2: Fetch and Pre-process Base...\n")
-    #processor.process_base_files()
+    print("Step 2: Fetch and Pre-process Base...\n")
+    processor.process_base_files()
     
-    #print("Step 3: Fetch and Pre-process data from Rover1...\n")
-    #processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    print("Step 3: Fetch and Pre-process data from Rover1...\n")
+    processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
-    # print("Step 4: Converting Rover1 raw data into POS data...")
-    # processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
+    print("Step 4: Converting Rover1 raw data into POS data...")
+    processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
     print("Step 5: Fetch and Pre-process data from Rover2...")
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
-    #print("Step 6: Converting Rover2 raw data into POS data...")
-    #processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
+    print("Step 6: Converting Rover2 raw data into POS data...")
+    processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
-    # print("Step 7: Data assembly")
-    # processor.merge_output_files()
-    # print("All Processes Done!")
+    print("Step 7: Data assembly")
+    processor.merge_output_files()
+    print("All Processes Done!")
     

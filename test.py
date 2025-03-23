@@ -91,15 +91,15 @@ class GNSSProcessor:
             rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
             rover_data_dir = os.path.join(rover_local_dir, "raw")
 
-            downloader = FTPDownloader(settings)
-            rover_file_paths = downloader.get_unprocessed_files_in_remote_path(
-                settings["data_dir"], 
-                settings["prefix"], 
-                rover_data_dir
-            )
-            rover_local_file_paths = downloader.generate_local_file_paths(rover_data_dir, rover_file_paths, start_date, start_time)
-            downloader.download_files(rover_file_paths, rover_local_file_paths)
-            downloader.disconnect()
+            # downloader = FTPDownloader(settings)
+            # rover_file_paths = downloader.get_unprocessed_files_in_remote_path(
+            #     settings["data_dir"], 
+            #     settings["prefix"], 
+            #     rover_data_dir
+            # )
+            # rover_local_file_paths = downloader.generate_local_file_paths(rover_data_dir, rover_file_paths, start_date, start_time)
+            # downloader.download_files(rover_file_paths, rover_local_file_paths)
+            # downloader.disconnect()
 
             rover_data_dir_processed = os.path.join(rover_local_dir, "process")
             self.t2r.process_all_tps_files_in_path(
@@ -190,7 +190,6 @@ class GNSSProcessor:
                 data_rover_north,
                 data_rover_up
             )
-
             if not result:
                 continue
 
