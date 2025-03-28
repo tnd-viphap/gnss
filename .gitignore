@@ -7,3 +7,4 @@ rtklib/__init__.py
 __pycache__
 publishers/
 dev/
+.vscode/

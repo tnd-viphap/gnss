@@ -1,0 +1,18 @@
+{
+    "toolbar-button": {
+        "family": "Inter SemiBold",
+        "size": 12,
+        "weight": "normal",
+        "slant": "roman",
+        "underline": false,
+        "overstrike": false
+    },
+    "content-header": {
+        "family": "Inter SemiBold",
+        "size": 12,
+        "weight": "normal",
+        "slant": "roman",
+        "underline": false,
+        "overstrike": false
+    }
+}
