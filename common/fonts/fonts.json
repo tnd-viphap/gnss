@@ -7,7 +7,23 @@
         "underline": false,
         "overstrike": false
     },
-    "content-header": {
+    "content-header-l1": {
+        "family": "Inter SemiBold",
+        "size": 16,
+        "weight": "normal",
+        "slant": "roman",
+        "underline": false,
+        "overstrike": false
+    },
+    "content-header-l2": {
+        "family": "Inter SemiBold",
+        "size": 14,
+        "weight": "normal",
+        "slant": "roman",
+        "underline": false,
+        "overstrike": false
+    },
+    "content-body": {
         "family": "Inter SemiBold",
         "size": 12,
         "weight": "normal",
