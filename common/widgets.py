@@ -27,11 +27,23 @@ Version: 20240226
 
 import io
 import os
+import re
 import sys
-from tkinter import ttk
+import threading
+from datetime import datetime
+from queue import Empty, Queue
+from tkinter import filedialog, ttk
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
+from tkinterdnd2 import DND_FILES
+
+from common.helpers import Signal
+import common.parser as cfg
+from modules.datastream.ftp import FTPDownloader
 
 from .src.util.CTkGif import CTkGif
 from .src.util.py_win_style import set_opacity
@@ -79,6 +91,484 @@ btn_icon_only_footer = {**DEFAULT_ICON_ONLY_BTN, "width": 80, "fg_color": ("#EBE
                         "hover_color": ("#DFE1E5", "#43454A"), "corner_radius": 0}
 
 TEXT = "Some quick example text to build on the card title and make up the bulk of the card's content."
+
+
+class DeviceSelectionDialog(ctk.CTkToplevel):
+    def __init__(self, parent, device_db):
+        super().__init__(parent)
+
+        # Initialize signals
+        self.status_signal = Signal()
+        self.status_signal.connect(self.update_status)
+        self.progress_signal = Signal()
+        self.progress_signal.connect(self.update_progress)
+        self.error_signal = Signal()
+        self.error_signal.connect(self.handle_error)
+        
+        # Configure dialog window
+        self.title("Get Data")
+        self.geometry("330x180")
+        self.iconbitmap("assets/Logo.ico")
+        self.resizable(False, False)
+        self.transient(parent)  # Make dialog modal
+        self.grab_set()  # Make dialog modal
+        
+        # Center the dialog
+        self.center_dialog()
+        
+        # Store device database
+        self.device_db = device_db
+        
+        # Create main container
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Create device selection frame
+        device_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        device_frame.pack(fill="x", pady=(0, 20))
+        
+        # Device Database label
+        device_label = ctk.CTkLabel(
+            device_frame,
+            text="Select Device",
+            font=parent.font_manager.get_font("content-body")
+        )
+        device_label.pack(side="top", padx=(0, 10), anchor="w")
+        
+        # Create a frame for dropdown and buttons
+        controls_frame = ctk.CTkFrame(device_frame, fg_color="transparent")
+        controls_frame.pack(fill="x", pady=(5, 0))
+        
+        # Device selection dropdown
+        self.device_var = ctk.StringVar(value="All")
+        self.device_dropdown = ctk.CTkOptionMenu(
+            controls_frame,
+            values=self.get_device_options(),
+            variable=self.device_var,
+            font=parent.font_manager.get_font("content-body"),
+            width=200
+        )
+        self.device_dropdown.pack(side="left", padx=(0, 10))
+        
+        # Fetch button
+        self.fetch_image = ctk.CTkImage(light_image=Image.open("assets/Fetch.png"),
+                                         dark_image=Image.open("assets/Fetch.png"),
+                                         size=(20, 20))
+        self.fetch_button = ctk.CTkButton(
+            controls_frame,
+            text="",
+            image=self.fetch_image,
+            width=28,
+            font=parent.font_manager.get_font("content-body"),
+            command=self.fetch_data
+        )
+        self.fetch_button.pack(side="left", padx=(0, 10))
+        
+        # Cancel button
+        self.cancel_image = ctk.CTkImage(light_image=Image.open("assets/Disconnect.png"),
+                                         dark_image=Image.open("assets/Disconnect.png"),
+                                         size=(20, 20))
+        self.cancel_button = ctk.CTkButton(
+            controls_frame,
+            text="",
+            image=self.cancel_image,
+            width=28,
+            font=parent.font_manager.get_font("content-body"),
+            command=self.destroy
+        )
+        self.cancel_button.pack(side="left")
+        
+        # Bind Enter key to fetch data
+        self.bind('<Return>', lambda e: self.fetch_data())
+
+        # Create status label (initially hidden)
+        self.status_label = ctk.CTkLabel(
+            self.container,
+            text="Progress:",
+            font=parent.font_manager.get_font("content-body")
+        )
+        self.status_label.pack(side="top", pady=(0, 0), anchor="w")
+        
+        # Create progress bar (initially hidden)
+        self.progress_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.progress_frame.pack(fill="x", pady=(0, 0), expand=True)
+        
+        self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
+        self.progress_bar.set(0)
+        self.progress_bar.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        self.progress_label = ctk.CTkLabel(
+            self.progress_frame,
+            text="0%",
+            font=parent.font_manager.get_font("content-body"),
+            width=50
+        )
+        self.progress_label.pack(side="right")
+        
+        # Create queue for thread communication
+        self.queue = Queue()
+        
+        # Status animation variables
+        self.status_dots = 0
+        self.status_animation_id = None
+        
+    def center_dialog(self):
+        """Center the dialog on the screen"""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def get_device_options(self):
+        """Generate device options from device database"""
+        if not self.device_db:
+            return ["Error: Device database not loaded"]
+            
+        options = ["All"]
+        
+        # Add individual devices
+        if "ftp" in self.device_db:
+            # Add Base
+            if "base" in self.device_db["ftp"]:
+                options.append(self.device_db["ftp"]["base"]["local_dir"])
+            
+            # Add Rovers
+            if "rovers1" in self.device_db["ftp"]:
+                for rover in self.device_db["ftp"]["rovers1"]:
+                    options.append(rover["local_dir"])
+            if "rovers2" in self.device_db["ftp"]:
+                for rover in self.device_db["ftp"]["rovers2"]:
+                    options.append(rover["local_dir"])
+        
+        # Add combinations
+        if "base" in self.device_db["ftp"]:
+            if "rovers1" in self.device_db["ftp"]:
+                options.append(f"{self.device_db['ftp']['base']['local_dir']} + {self.device_db['ftp']['rovers1'][0]['local_dir']}")
+            if "rovers2" in self.device_db["ftp"]:
+                options.append(f"{self.device_db['ftp']['base']['local_dir']} + {self.device_db['ftp']['rovers2'][0]['local_dir']}")
+        
+        return options
+        
+    def update_ui(self):
+        """Update UI based on thread messages"""
+        try:
+            while True:
+                message = self.queue.get_nowait()
+                if message["type"] == "progress":
+                    self.progress_bar.set(message["value"])
+                elif message["type"] == "status":
+                    self.status_label.configure(text=message["text"])
+                elif message["type"] == "error":
+                    print(message["text"])
+                    self.enable_buttons()
+                elif message["type"] == "complete":
+                    self.destroy()
+        except Empty:
+            pass
+        finally:
+            self.after(100, self.update_ui)
+    
+    def update_progress(self, value):
+        """Update the progress bar and percentage label"""
+        self.progress_bar.set(value)
+        self.progress_label.configure(text=f"{int(value * 100)}%")
+
+    def update_status(self, text):
+        """Update the status label"""
+        self.status_label.configure(text=text)
+            
+    def enable_buttons(self):
+        """Enable all buttons"""
+        self.fetch_button.configure(state="normal", width=28)
+        self.cancel_button.configure(state="normal", width=28)
+        self.device_dropdown.configure(state="normal")
+        
+    def disable_buttons(self):
+        """Disable all buttons"""
+        self.fetch_button.configure(state="disabled", width=28)
+        self.cancel_button.configure(state="disabled", width=28)
+        self.device_dropdown.configure(state="disabled")
+
+    def handle_error(self, error_msg):
+        """Handle error signal"""
+        print(f"Error: {error_msg}")
+        self.enable_buttons()
+        
+    def animate_status(self):
+        """Animate the status label dots"""
+        self.status_dots = (self.status_dots + 1) % 4
+        dots = "." * self.status_dots
+        self.status_label.configure(text=f"Progress: Fetching data{dots}")
+        self.status_animation_id = self.after(500, self.animate_status)
+
+    def stop_status_animation(self):
+        """Stop the status label animation"""
+        if self.status_animation_id is not None:
+            self.after_cancel(self.status_animation_id)
+            self.status_animation_id = None
+
+    def fetch_data(self):
+        """Handle data fetching based on selected device"""
+        selected_device = self.device_var.get()
+        
+        if selected_device == "Error: Device database not loaded":
+            print("Device database not loaded. Please check the configuration.")
+            return
+        
+        # Disable UI elements
+        self.disable_buttons()
+        
+        # Show progress bar and status
+        self.status_label.pack(side="top", pady=(0, 0), anchor="w")
+        self.status_label.configure(text="Progress: Fetching data")
+        self.progress_frame.pack(fill="x", pady=(0, 0))
+        
+        # Initialize animation variables
+        self.status_dots = 0
+        self.status_animation_id = self.after(500, self.animate_status)
+        
+        # Start UI update loop
+        self.update_ui()
+        
+        # Start processing thread
+        thread = threading.Thread(
+            target=self.process_data,
+            args=(selected_device,),
+            daemon=True
+        )
+        thread.start()
+
+    def download_base_data(self, start_date=None, start_time=None):
+        downloader = FTPDownloader(cfg.FTP_BASE_SETTINGS, self.progress_signal, self.error_signal, self.status_signal)
+        self.status_signal.emit("Progress: Base connected")
+        base_file_paths = downloader.get_unprocessed_files_in_remote_path(
+            cfg.FTP_BASE_SETTINGS["data_dir"], 
+            cfg.FTP_BASE_SETTINGS["prefix"], 
+            cfg.BASE_DATA_DIR
+        )
+        base_local_file_paths = downloader.generate_local_file_paths(cfg.BASE_DATA_DIR, base_file_paths, start_date, start_time)
+        downloader.download_files(base_file_paths, base_local_file_paths)
+        downloader.disconnect()
+        self.status_signal.emit("Progress: Base files downloaded")
+
+    def download_rover_data(self, settings_list, start_date=None, start_time=None):
+        for settings in settings_list:
+            print(settings)
+            rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
+            rover_data_dir = os.path.join(rover_local_dir, "raw")
+
+            downloader = FTPDownloader(settings, self.progress_signal, self.error_signal, self.status_signal)
+            self.status_signal.emit(f"Progress: {settings['local_dir']} connected")
+            rover_file_paths = downloader.get_unprocessed_files_in_remote_path(
+                settings["data_dir"], 
+                settings["prefix"], 
+                rover_data_dir
+            )
+            rover_local_file_paths = downloader.generate_local_file_paths(rover_data_dir, rover_file_paths, start_date, start_time)
+            downloader.download_files(rover_file_paths, rover_local_file_paths)
+            downloader.disconnect()
+            self.status_signal.emit(f"Progress: {settings['local_dir']} files downloaded")
+
+    def process_data(self, selected_device, start_date=None, start_time=None):
+        """Process data in a separate thread"""
+        err = None
+        try:
+            if selected_device == "All":
+                self.download_base_data(start_date, start_time)
+                self.download_rover_data(cfg.FTP_ROVERS1_SETTINGS, start_date, start_time)
+                self.download_rover_data(cfg.FTP_ROVERS2_SETTINGS, start_date, start_time)
+            elif selected_device == "Base":
+                self.download_base_data(start_date, start_time)
+            elif selected_device == "Rover1":
+                self.download_rover_data(cfg.FTP_ROVERS1_SETTINGS, start_date, start_time)
+            elif selected_device == "Rover2":
+                self.download_rover_data(cfg.FTP_ROVERS2_SETTINGS, start_date, start_time)
+            elif selected_device == "Base+Rover1":
+                self.download_base_data(start_date, start_time)
+                self.download_rover_data(cfg.FTP_ROVERS1_SETTINGS, start_date, start_time)
+            elif selected_device == "Base+Rover2":
+                self.download_base_data(start_date, start_time)
+                self.download_rover_data(cfg.FTP_ROVERS2_SETTINGS, start_date, start_time)     
+        except Exception as e:
+            self.error_signal.emit(f"Error during data fetching: {str(e)}")
+            err = "Cannot connect to device"
+        finally:
+            # Stop status animation and set final status
+            self.stop_status_animation()
+            self.status_label.configure(text=str(err) if err else "Progress: Done")
+            self.enable_buttons()
+            return
+        
+class DragDropEntry(ctk.CTkEntry):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Enable drag and drop
+        self.drop_target_register(DND_FILES)
+        self.dnd_bind('<<Drop>>', self.drop_file)
+        
+        # Bind focus events for visual feedback
+        self.bind('<FocusIn>', self.on_focus_in)
+        self.bind('<FocusOut>', self.on_focus_out)
+        
+    def drop_file(self, event):
+        """Handle file drop event"""
+        file_path = event.data
+        # Remove curly braces if present (Windows)
+        file_path = file_path.strip('{}')
+        # Remove file:/// prefix if present
+        file_path = file_path.replace('file:///', '')
+        self.delete(0, 'end')
+        self.insert(0, file_path)
+        
+    def on_focus_in(self, event):
+        """Visual feedback when entry is focused"""
+        self.configure(border_color=self._fg_color)
+        
+    def on_focus_out(self, event):
+        """Reset visual feedback when entry loses focus"""
+        self.configure(border_color=self._border_color)
+
+class BatchDragDropEntry(DragDropEntry):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.current_year = datetime.now().year
+        
+    def drop_file(self, event):
+        """Handle file drop event with date extraction"""
+        file_path = event.data
+        # Remove curly braces if present (Windows)
+        file_path = file_path.strip('{}')
+        # Remove file:/// prefix if present
+        file_path = file_path.replace('file:///', '')
+        
+        # Get just the filename without path
+        file_name = os.path.basename(file_path)
+        
+        # Check if file has extension
+        if '.' in file_name:
+            print("Invalid File: Please select a file without extension")
+            return
+        
+        # Extract date and hour pattern
+        # Example: Base_3600_0312a -> date: 0312, hour: a
+        match = re.search(r'_(\d{4})([a-z])$', file_name)
+        if match:
+            date_str = match.group(1)
+            hour_pattern = match.group(2)
+            
+            # Convert date string to DD/MM/YYYY
+            day = date_str[:2]
+            month = date_str[2:]
+            year = self.current_year
+            
+            # Convert hour pattern to actual hour (a=8, b=9, etc.)
+            hour = ord(hour_pattern) - ord('a') + 8
+            
+            # Format the date and time
+            formatted_date = f"{day}/{month}/{year} {hour:02d}:00"
+            self.delete(0, 'end')
+            self.insert(0, formatted_date)
+        else:
+            print("Invalid File Format: File name must follow the pattern: Base_3600_MMDDx where MMDD is the date and x is the hour (a-z)")
+            self.delete(0, 'end')
+            self.insert(0, file_name)
+
+    def browse_file(self, entry_widget):
+        """Open file dialog and set the selected path to the entry widget"""
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            file_name = os.path.basename(file_path)
+            
+            # Check if file has extension
+            if '.' in file_name:
+                print("Invalid File: Please select TPS file")
+                return
+            
+            # Extract date and hour pattern
+            match = re.search(r'_(\d{4})([a-z])$', file_name)
+            if match:
+                date_str = match.group(1)
+                hour_pattern = match.group(2)
+                
+                # Convert date string to DD/MM/YYYY
+                day = date_str[:2]
+                month = date_str[2:]
+                year = self.current_year
+                
+                # Convert hour pattern to actual hour (a=8, b=9, etc.)
+                hour = ord(hour_pattern) - ord('a') + 8
+                
+                # Format the date and time
+                formatted_date = f"{day}/{month}/{year} {hour:02d}:00"
+                self.delete(0, 'end')
+                self.insert(0, formatted_date)
+            else:
+                print("Invalid File Format: File name must follow the pattern: Base_3600_MMDDx where MMDD is the date and x is the hour (a-z)")
+                self.delete(0, 'end')
+                self.insert(0, file_name)
+
+class CTkMessageBox(ctk.CTkToplevel):
+    def __init__(self, parent, title, message):
+        super().__init__(parent)
+        
+        # Configure window
+        self.title(title)
+        self.geometry("400x100")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        
+        # Center the dialog
+        self.center_dialog()
+        
+        # Create main container
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Error icon
+        self.error_image = ctk.CTkImage(
+            light_image=Image.open("assets/error.png"),
+            dark_image=Image.open("assets/error.png"),
+            size=(20, 20)
+        )
+        
+        # Message label with icon
+        self.message_label = ctk.CTkLabel(
+            self.container,
+            text=message,
+            font=parent.font_manager.get_font("content-body"),
+            image=self.error_image,
+            compound="left",
+            wraplength=250
+        )
+        self.message_label.pack(pady=(0, 20))
+        
+        # OK button
+        self.ok_button = ctk.CTkButton(
+            self.container,
+            text="OK",
+            width=100,
+            command=self.destroy
+        )
+        self.ok_button.pack()
+        
+        # Bind Enter key to close dialog
+        self.bind('<Return>', lambda e: self.destroy())
+        
+        # Set focus to OK button
+        self.ok_button.focus_set()
+        
+    def center_dialog(self):
+        """Center the dialog on the screen"""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
 
 
 class CTkAlert(ctk.CTkToplevel):
@@ -224,43 +714,116 @@ class CTkBanner(ctk.CTkFrame):
         self.event = event
 
 
-class CTkNotification(ctk.CTkFrame):
+class CTkNotification(ctk.CTkToplevel):
     def __init__(self, master, state: str = "info", message: str = "message", side: str = "right_bottom"):
-        self.root = master
-        self.width = 400
-        self.height = 60
-        super().__init__(self.root, width=self.width, height=self.height, corner_radius=5, border_width=1)
-        self.grid_propagate(False)
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        self.horizontal, self.vertical = side.split("_")
-
+        super().__init__(master)
+        
+        # Configure window
+        self.title("")  # Empty title for notification
+        self.overrideredirect(True)  # Remove window decorations
+        self.attributes('-topmost', True)  # Keep on top
+        self.transient(master)  # Make transient to main window
+        
+        # Set initial size
+        self.width = 300
+        self.min_height = 40
+        
+        # Create main container
+        self.container = ctk.CTkFrame(self, corner_radius=5, border_width=1)
+        self.container.pack(fill="both", expand=True)
+        
+        # Configure grid
+        self.container.grid_columnconfigure(0, weight=1)
+        self.container.grid_rowconfigure(0, weight=1)
+        
+        # Load icons
         if state not in ICON_PATH or ICON_PATH[state] is None:
-            self.icon = ctk.CTkImage(Image.open(ICON_PATH["info"]), Image.open(ICON_PATH["info"]), (24, 24))
+            self.icon = ctk.CTkImage(Image.open(ICON_PATH["info"]), Image.open(ICON_PATH["info"]), (20, 20))
         else:
-            self.icon = ctk.CTkImage(Image.open(ICON_PATH[state]), Image.open(ICON_PATH[state]), (24, 24))
-
-        self.close_icon = ctk.CTkImage(Image.open(ICON_PATH["close"][0]), Image.open(ICON_PATH["close"][1]), (20, 20))
-
-        self.message_label = ctk.CTkLabel(self, text=f"  {message}", font=("", 13), image=self.icon, compound="left")
-        self.message_label.grid(row=0, column=0, sticky="nsw", padx=15, pady=10)
-
-        self.close_btn = ctk.CTkButton(self, text="", image=self.close_icon, width=20, height=20, hover=False,
-                                       fg_color="transparent", command=self.close_notification)
-        self.close_btn.grid(row=0, column=1, sticky="nse", padx=10, pady=10)
-
-        place_frame(self.root, self, self.horizontal, self.vertical)
-        self.root.bind("<Configure>", self.update_position, add="+")
-
-    def update_position(self, event):
-        place_frame(self.root, self, self.horizontal, self.vertical)
+            self.icon = ctk.CTkImage(Image.open(ICON_PATH[state]), Image.open(ICON_PATH[state]), (20, 20))
+            
+        self.close_icon = ctk.CTkImage(Image.open(ICON_PATH["close"][0]), Image.open(ICON_PATH["close"][1]), (16, 16))
+        
+        # Create message label
+        self.message_label = ctk.CTkLabel(
+            self.container,
+            text=f"  {message}",
+            font=("", 12),
+            image=self.icon,
+            compound="left",
+            wraplength=200
+        )
+        self.message_label.grid(row=0, column=0, sticky="nsw", padx=10, pady=5)
+        
+        # Create close button
+        self.close_btn = ctk.CTkButton(
+            self.container,
+            text="",
+            image=self.close_icon,
+            width=16,
+            height=16,
+            hover=False,
+            fg_color="transparent",
+            command=self.close_notification
+        )
+        self.close_btn.grid(row=0, column=1, sticky="nse", padx=10, pady=5)
+        
+        # Calculate required height and update window size
         self.update_idletasks()
-        self.root.update_idletasks()
-
+        self.adjust_height()
+        
+        # Position the notification
+        self.position_notification()
+        
+        # Bind window resize event
+        self.master.bind("<Configure>", self.update_position, add="+")
+        
+        # Auto-close after 3 seconds
+        self.after(3000, self.close_notification)
+        
+    def adjust_height(self):
+        """Adjust window height based on message content"""
+        # Get the required height for the message label
+        message_height = self.message_label.winfo_reqheight()
+        
+        # Add padding (top + bottom)
+        padding = 10  # 5px top + 5px bottom
+        
+        # Calculate total required height
+        required_height = message_height + padding
+        
+        # Ensure minimum height
+        self.height = max(self.min_height, required_height)
+        
+        # Update window size
+        self.geometry(f"{self.width}x{self.height}")
+        
+    def position_notification(self):
+        """Calculate and set the notification position at the right bottom corner"""
+        # Get master window dimensions and position
+        master_x = self.master.winfo_x()
+        master_y = self.master.winfo_y()
+        master_width = self.master.winfo_width()
+        master_height = self.master.winfo_height()
+        
+        # Calculate position for right bottom corner
+        x = master_x + master_width - self.width - 20
+        y = master_y + master_height - self.height - 20
+            
+        # Ensure notification stays within master window bounds
+        x = max(master_x, min(x, master_x + master_width - self.width))
+        y = max(master_y, min(y, master_y + master_height - self.height))
+            
+        # Set the position
+        self.geometry(f"{self.width}x{self.height}+{x}+{y}")
+        
+    def update_position(self, event):
+        """Update position when main window moves"""
+        self.position_notification()
+        
     def close_notification(self):
-        self.root.unbind("<Configure>")
+        """Close the notification"""
+        self.master.unbind("<Configure>")
         self.destroy()
 
 

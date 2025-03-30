@@ -1,5 +1,7 @@
 import os
 import shutil
+import threading
+from typing import List, Callable, Any
 
 # các hàm hỗ trợ
 # hàm xóa file
@@ -31,3 +33,36 @@ def clear_folder_content(dir):
 
 def check_file_name_exists_in_dir(file_name, dir):
     return os.path.exists(os.path.join(dir, file_name))
+
+
+class Signal:
+    """A class that mimics PyQt's signal functionality"""
+    def __init__(self):
+        self._slots: List[Callable] = []
+        self._lock = threading.Lock()
+        
+    def connect(self, slot: Callable) -> None:
+        """Connect a slot to this signal"""
+        with self._lock:
+            if slot not in self._slots:
+                self._slots.append(slot)
+                
+    def disconnect(self, slot: Callable) -> None:
+        """Disconnect a slot from this signal"""
+        with self._lock:
+            if slot in self._slots:
+                self._slots.remove(slot)
+                
+    def emit(self, *args: Any, **kwargs: Any) -> None:
+        """Emit the signal with the given arguments"""
+        with self._lock:
+            for slot in self._slots:
+                try:
+                    slot(*args, **kwargs)
+                except Exception as e:
+                    print(f"Error in signal slot: {str(e)}")
+                    
+    def disconnect_all(self) -> None:
+        """Disconnect all slots from this signal"""
+        with self._lock:
+            self._slots.clear()

@@ -69,7 +69,7 @@ class GNSSProcessor:
         except Exception:
             return None
 
-    def process_base_files(self, start_date=None, start_time=None):
+    def fetch_base_files(self, start_date=None, start_time=None):
         downloader = FTPDownloader(cfg.FTP_BASE_SETTINGS)
         base_file_paths = downloader.get_unprocessed_files_in_remote_path(
             cfg.FTP_BASE_SETTINGS["data_dir"], 
@@ -80,13 +80,14 @@ class GNSSProcessor:
         downloader.download_files(base_file_paths, base_local_file_paths)
         downloader.disconnect()
 
+    def process_base_files(self):
         self.t2r.process_all_tps_files_in_path(
             cfg.BASE_DATA_DIR,
             cfg.BASE_DATA_DIR_PROCESSED,
             os.path.join(cfg.DATA_DIR, cfg.FTP_BASE_SETTINGS["local_dir"] + "/tpsprocess.txt")
         )
 
-    def process_rover_files(self, settings_list, start_date=None, start_time=None):
+    def fetch_rover_files(self, settings_list, start_date=None, start_time=None):
         for settings in settings_list:
             rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
             rover_data_dir = os.path.join(rover_local_dir, "raw")
@@ -101,6 +102,10 @@ class GNSSProcessor:
             downloader.download_files(rover_file_paths, rover_local_file_paths)
             downloader.disconnect()
 
+    def process_rover_files(self, settings_list):
+        for settings in settings_list:
+            rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
+            rover_data_dir = os.path.join(rover_local_dir, "raw")
             rover_data_dir_processed = os.path.join(rover_local_dir, "process")
             self.t2r.process_all_tps_files_in_path(
                 rover_data_dir,
@@ -248,15 +253,18 @@ if __name__ == "__main__":
     processor = GNSSProcessor()
     
     print("Step 2: Fetch and Pre-process Base...\n")
+    processor.fetch_base_files()
     processor.process_base_files()
     
     print("Step 3: Fetch and Pre-process data from Rover1...\n")
+    processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
     print("Step 4: Converting Rover1 raw data into POS data...")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
     print("Step 5: Fetch and Pre-process data from Rover2...")
+    processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
     print("Step 6: Converting Rover2 raw data into POS data...")

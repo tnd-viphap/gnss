@@ -2,11 +2,15 @@ import os
 import time
 from ftplib import FTP, error_perm
 import common.helpers as helpers
+from common.helpers import Signal
 
 class FTPDownloader:
-    def __init__(self, credentials):
+    def __init__(self, credentials, progress_signal=None, error_signal=None, status_signal=None):
         self.ftp = None
         self.credentials = credentials
+        self.progress_signal = progress_signal
+        self.error_signal = error_signal
+        self.status_signal = status_signal
         self.last_activity = time.time()
         self.timeout = credentials.get("timeout", 60)  # Default 60 seconds timeout
         self.connect()
@@ -86,8 +90,9 @@ class FTPDownloader:
                     if file.startswith(prefix):
                         result.append(os.path.join(remote_dir, file))
                 result.sort()
-
-                return result[:-1] if result else []
+                result = result[:-1] if result else []
+                self.status_signal.emit(f"Downloading {len(result)} files...")
+                return result
 
             except Exception as e:
                 print(f"-> Error getting unprocessed files (attempt {attempt + 1}/{max_retries}): {e}")
@@ -115,7 +120,7 @@ class FTPDownloader:
             return idx, [os.path.join(local_dir, os.path.basename(path)) for path in remote_file_paths]
 
         except Exception as e:
-            print(f"-> Error generating local paths: {e}")
+            self.error_signal.emit(f"Error generating local paths: {e}")
             return []
 
     def download_files(self, remote_file_paths, local_file_paths):
@@ -124,8 +129,10 @@ class FTPDownloader:
             index = remote_file_paths.index(remote_path)
             if (not os.path.exists(local_path)) or (os.path.exists(local_path) and float(os.path.getsize(local_path))/1024**2 < 2000):
                 self.download_file_with_retry(index, remote_path, local_path)
+                if self.progress_signal:
+                    self.progress_signal.emit(index/len(remote_file_paths))
             else:
-                print(f"-> File already exists: {os.path.basename(local_path)}")
+                self.error_signal.emit(f"-> File already exists: {os.path.basename(local_path)}")
 
     def download_file_with_retry(self, index, remote_file_path, local_file_path):
         """Download single file with retries and connection checking"""
@@ -136,16 +143,17 @@ class FTPDownloader:
                 self.download_file(index, remote_file_path, local_file_path)
                 return  # Success
             except Exception as e:
-                print(f"-> Download attempt {attempt + 1}/{max_retries} failed: {e}")
+                self.error_signal.emit(f"-> Download attempt {attempt + 1}/{max_retries} failed: {e}")
                 if attempt < max_retries - 1:
                     self.reconnect()
                     time.sleep(2)  # Wait before retry
                 else:
-                    print(f"-> Failed to download after {max_retries} attempts")
+                    self.error_signal.emit(f"-> Failed to download after {max_retries} attempts")
 
     def download_file(self, index, remote_file_path, local_file_path):
         """Download single file with progress monitoring"""
         print(f"[{index}] Downloading {remote_file_path}")
+        self.status_signal.emit(f"Downloading {remote_file_path}")
 
         try:
             with open(local_file_path, 'wb') as file:
@@ -156,12 +164,15 @@ class FTPDownloader:
                 self.ftp.retrbinary(f"RETR {remote_file_path}", callback)
             
             if not os.path.exists(local_file_path) or os.path.getsize(local_file_path) == 0:
+                self.error_signal.emit(f"-> Download failed or file is empty: {remote_file_path}")
                 raise Exception("-> Download failed or file is empty")
 
             print(f"-> Successfully downloaded {remote_file_path}")
+            self.status_signal.emit(f"Successfully downloaded {remote_file_path}")
 
         except Exception as e:
             print(f"-> ERROR in download {remote_file_path}: {e}")
+            self.error_signal.emit(f"-> ERROR in download {remote_file_path}: {e}")
             if os.path.exists(local_file_path):
                 helpers.remove_file(local_file_path)
             raise  # Re-raise for retry handling

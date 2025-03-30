@@ -1,5 +1,5 @@
 {
-    "data_dir": "C:/Users/ViphapCom2/Documents/GNSS_ViPhap/gnss/data",
+    "data_dir": "D:/VIPHAP/gnss/data",
     "rnx2rtkp_config_file": "processing.conf",
     "logging": true,
     "ftp": {

@@ -1,151 +1,44 @@
+import json
+import os
+import sys
+import time
+
 import customtkinter as ctk
 from PIL import Image
-import os
-from tkinter import filedialog
-from tkinterdnd2 import DND_FILES, TkinterDnD
+from tkinterdnd2 import TkinterDnD
+
+from bindings import DashboardBindings
 from common.fonts.font_manager import FontManager
-from common.customwidgets.ctk_components import CTkAlert
-import re
-from datetime import datetime
+from common.helpers import Signal
+from common.widgets import (BatchDragDropEntry, CTkMessageBox, CTkNotification,
+                            DeviceSelectionDialog, DragDropEntry)
 
-class DragDropEntry(ctk.CTkEntry):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # Enable drag and drop
-        self.drop_target_register(DND_FILES)
-        self.dnd_bind('<<Drop>>', self.drop_file)
-        
-        # Bind focus events for visual feedback
-        self.bind('<FocusIn>', self.on_focus_in)
-        self.bind('<FocusOut>', self.on_focus_out)
-        
-    def drop_file(self, event):
-        """Handle file drop event"""
-        file_path = event.data
-        # Remove curly braces if present (Windows)
-        file_path = file_path.strip('{}')
-        # Remove file:/// prefix if present
-        file_path = file_path.replace('file:///', '')
-        self.delete(0, 'end')
-        self.insert(0, file_path)
-        
-    def on_focus_in(self, event):
-        """Visual feedback when entry is focused"""
-        self.configure(border_color=self._fg_color)
-        
-    def on_focus_out(self, event):
-        """Reset visual feedback when entry loses focus"""
-        self.configure(border_color=self._border_color)
-
-class BatchDragDropEntry(DragDropEntry):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.current_year = datetime.now().year
-        
-    def drop_file(self, event):
-        """Handle file drop event with date extraction"""
-        file_path = event.data
-        # Remove curly braces if present (Windows)
-        file_path = file_path.strip('{}')
-        # Remove file:/// prefix if present
-        file_path = file_path.replace('file:///', '')
-        
-        # Get just the filename without path
-        file_name = os.path.basename(file_path)
-        
-        # Check if file has extension
-        if '.' in file_name:
-            alert = CTkAlert(
-                state="warning",    
-                title="Invalid File",
-                body_text="Please select a file without extension",
-            )
-            alert.show()
-            return
-        
-        # Extract date and hour pattern
-        # Example: Base_3600_0312a -> date: 0312, hour: a
-        match = re.search(r'_(\d{4})([a-z])$', file_name)
-        if match:
-            date_str = match.group(1)
-            hour_pattern = match.group(2)
-            
-            # Convert date string to DD/MM/YYYY
-            day = date_str[:2]
-            month = date_str[2:]
-            year = self.current_year
-            
-            # Convert hour pattern to actual hour (a=8, b=9, etc.)
-            hour = ord(hour_pattern) - ord('a') + 8
-            
-            # Format the date and time
-            formatted_date = f"{day}/{month}/{year} {hour:02d}:00"
-            self.delete(0, 'end')
-            self.insert(0, formatted_date)
-        else:
-            alert = CTkAlert(
-                state="warning",
-                title="Invalid File Format",
-                body_text="File name must follow the pattern: Base_3600_MMDDx where MMDD is the date and x is the hour (a-z)",  
-            )
-            alert.show()
-            self.delete(0, 'end')
-            self.insert(0, file_name)
-
-    def browse_file(self, entry_widget):
-        """Open file dialog and set the selected path to the entry widget"""
-        file_path = filedialog.askopenfilename()
-        if file_path:
-            file_name = os.path.basename(file_path)
-            
-            # Check if file has extension
-            if '.' in file_name:
-                alert = CTkAlert(
-                    state="warning",
-                    title="Invalid File",
-                    body_text="Please select TPS file",
-                )
-                alert.show()
-                return
-            
-            # Extract date and hour pattern
-            match = re.search(r'_(\d{4})([a-z])$', file_name)
-            if match:
-                date_str = match.group(1)
-                hour_pattern = match.group(2)
-                
-                # Convert date string to DD/MM/YYYY
-                day = date_str[:2]
-                month = date_str[2:]
-                year = self.current_year
-                
-                # Convert hour pattern to actual hour (a=8, b=9, etc.)
-                hour = ord(hour_pattern) - ord('a') + 8
-                
-                # Format the date and time
-                formatted_date = f"{day}/{month}/{year} {hour:02d}:00"
-                self.delete(0, 'end')
-                self.insert(0, formatted_date)
-            else:
-                alert = CTkAlert(
-                    state="warning",
-                    title="Invalid File Format",
-                    body_text="File name must follow the pattern: Base_3600_MMDDx where MMDD is the date and x is the hour (a-z)",
-                )
-                alert.show()
-                self.delete(0, 'end')
-                self.insert(0, file_name)
+sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 
 class App(ctk.CTk, TkinterDnD.DnDWrapper):
     def __init__(self):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
         
+        # Load device database
+        try:
+            with open('device_db.json', 'r') as f:
+                self.device_db = json.load(f)
+        except Exception as e:
+            print(f"Error loading device database: {e}")
+            self.device_db = None
+            return
+        
         # Configure window
         self.title("Extended RTK Positioning")
         self.iconbitmap("assets/Logo.ico")
-        self.geometry("1920x1080")
+        
+        # Get screen dimensions and DPI
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Set window geometry
+        self.geometry(f"{screen_width}x{screen_height}")
         self.center_window()  # Center the window on screen
 
         # Configure fonts
@@ -239,6 +132,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.plot_frame = ctk.CTkFrame(self.main_frame, corner_radius=0, fg_color="transparent")
         
         # Configure dashboard frame
+        self.error_signal = Signal()
+        self.error_signal.connect(self.error_event)
+        self.dashboard_bindings = DashboardBindings(self.error_signal)
         self.setup_dashboard_frame()
         
         # Add content to other frames (placeholder labels)
@@ -287,7 +183,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.select_frame_by_name("dashboard")
 
     def getdata_button_event(self):
-        self.select_frame_by_name("getdata")
+        """Handle Get Data button click"""
+        dialog = DeviceSelectionDialog(self, self.device_db)
+        dialog.wait_window()  # Wait for dialog to close
 
     def plot_button_event(self):
         self.select_frame_by_name("plot")
@@ -309,6 +207,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         # Set the position of the window to the center of the screen
         self.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
+    ###### DASHBOARD ######
     def setup_dashboard_frame(self):
         # Create Quick Processing frame
         self.quick_processing_frame = ctk.CTkFrame(self.dashboard_frame)
@@ -338,7 +237,6 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.single_process_switch = ctk.CTkSwitch(
             self.mode_switches_frame,
             text="",
-            command=self.handle_single_switch,
             onvalue=True,
             offvalue=False
         )
@@ -356,16 +254,21 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.batch_process_switch = ctk.CTkSwitch(
             self.mode_switches_frame,
             text="",
-            command=self.handle_batch_switch,
             onvalue=True,
             offvalue=False
         )
         self.batch_process_switch.grid(row=0, column=3)
         
+        # Bind switch events
+        self.single_process_switch.bind("<ButtonRelease-1>", lambda event: self.switch_event(self.single_process_switch))
+        self.batch_process_switch.bind("<ButtonRelease-1>", lambda event: self.switch_event(self.batch_process_switch))
+        
         # Create frames container for process frames
         self.process_frames_container = ctk.CTkFrame(self.quick_processing_frame, fg_color="transparent")
         self.process_frames_container.pack(fill="x", padx=15, pady=(0, 15))
         
+        ###### SINGLE PROCESS ######
+
         # Create Single Process frame
         self.single_frame = ctk.CTkFrame(self.process_frames_container)
         self.single_frame.pack(fill="both", expand=True)
@@ -409,7 +312,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.rover_tps_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.rover_tps_entry)
         )
         self.rover_tps_button.pack(side="left", padx=(10, 0), pady=(5, 0))
         
@@ -437,9 +340,32 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.base_tps_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.base_tps_entry)
         )
         self.base_tps_button.pack(side="left", padx=(10, 0), pady=(5, 0))
+
+        # Add Execute button at the end of single frame
+        self.execute_tps_rinex_frame = ctk.CTkFrame(self.single_frame, fg_color="transparent")
+        self.execute_tps_rinex_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # Load Execute icon
+        self.execute_image = ctk.CTkImage(
+            light_image=Image.open("assets/execute-white.png"),
+            dark_image=Image.open("assets/execute-white.png"),
+            size=(20, 20)
+        )
+        
+        self.execute_tps_rinex_button = ctk.CTkButton(
+            self.execute_tps_rinex_frame,
+            text="Execute",
+            image=self.execute_image,
+            compound="left",
+            width=120,
+            height=32,
+            font=self.font_manager.get_font("content-body"),
+            command=lambda: self.tps_rinex_button_event()
+        )
+        self.execute_tps_rinex_button.pack(side="left")
         
         # Rinex to RTK Position section
         self.rinex_to_rtk_frame = ctk.CTkFrame(self.single_frame)
@@ -477,7 +403,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.rover_obs_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.rover_obs_entry)
         )
         self.rover_obs_button.pack(side="left", padx=(10, 0), pady=(5, 0))
         
@@ -505,7 +431,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.base_obs_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.base_obs_entry)
         )
         self.base_obs_button.pack(side="left", padx=(10, 0), pady=(5, 0))
         
@@ -533,7 +459,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.base_rover_pos_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.base_rover_pos_entry)
         )
         self.base_rover_pos_button.pack(side="left", padx=(10, 0), pady=(5, 0))
 
@@ -560,8 +486,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.remove_rtk_checkbox.pack(side="left")
 
         # Add Execute button at the end of single frame
-        self.execute_button_frame = ctk.CTkFrame(self.single_frame, fg_color="transparent")
-        self.execute_button_frame.pack(fill="x", padx=15, pady=(0, 15))
+        self.execute_rinex_rtk_frame = ctk.CTkFrame(self.single_frame, fg_color="transparent")
+        self.execute_rinex_rtk_frame.pack(fill="x", padx=15, pady=(0, 15))
         
         # Load Execute icon
         self.execute_image = ctk.CTkImage(
@@ -570,16 +496,19 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             size=(20, 20)
         )
         
-        self.execute_button = ctk.CTkButton(
-            self.execute_button_frame,
+        self.execute_rinex_rtk_button = ctk.CTkButton(
+            self.execute_rinex_rtk_frame,
             text="Execute",
             image=self.execute_image,
             compound="left",
             width=120,
             height=32,
-            font=self.font_manager.get_font("content-body")
+            font=self.font_manager.get_font("content-body"),
+            command=lambda: self.rinex_rtk_button_event()
         )
-        self.execute_button.pack(side="left")
+        self.execute_rinex_rtk_button.pack(side="left")
+
+        ###### BATCH PROCESS ######
 
         # Create Batch Process frame content
         self.batch_frame_to_nested_frame = ctk.CTkFrame(self.batch_frame, fg_color="#CCCCCC")
@@ -609,7 +538,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.start_obs_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.start_obs_entry)
         )
         self.start_obs_button.pack(side="left", padx=(0, 10), pady=(0, 0))
         
@@ -637,12 +566,12 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=lambda: self.browse_file(self.end_obs_entry)
+            command=lambda: self.dashboard_bindings.browse_file_single(self.end_obs_entry)
         )
         self.end_obs_button.pack(side="left", padx=(0, 10), pady=(0, 0))
         
         # Output Folder entry
-        self.output_folder_frame = ctk.CTkFrame(self.batch_frame_to_nested_frame, fg_color="transparent")
+        self.output_folder_frame = ctk.CTkFrame(self.batch_frame_to_nested_frame, fg_color="transparent")   
         self.output_folder_frame.pack(fill="x", padx=(5, 5), pady=(0, 15))
         
         ctk.CTkLabel(
@@ -665,7 +594,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             text="...",
             width=32,
             height=32,
-            command=self.browse_folder
+            command=lambda: self.dashboard_bindings.browse_folder(self.output_folder_entry)
         )
         self.output_folder_button.pack(side="left", padx=(0, 10), pady=(0, 0))
 
@@ -684,36 +613,28 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         )
         self.batch_execute_button.pack(side="left", padx=10, pady=(0, 0))
 
-    def handle_single_switch(self):
-        """Handle Single Process switch toggle"""
-        if self.single_process_switch.get():
-            # Switch turned on
-            self.batch_process_switch.deselect()  # Turn off batch switch
-            self.single_frame.pack(fill="both", expand=True)
-            self.batch_frame.pack_forget()
-        else:
-            # Switch turned off
-            self.single_frame.pack_forget()
-            self.single_process_switch.deselect()
+    def error_event(self, error_msg):
+        """Handle error signal"""
+        dialog = CTkMessageBox(self, "Error", error_msg)
+        dialog.wait_window()  # Wait for dialog to close
 
-    def handle_batch_switch(self):
-        """Handle Batch Process switch toggle"""
-        if self.batch_process_switch.get():
-            # Switch turned on
-            self.single_process_switch.deselect()  # Turn off single switch
-            self.batch_frame.pack(fill="both", expand=True)
-            self.single_frame.pack_forget()
-        else:
-            # Switch turned off
-            self.batch_frame.pack_forget()
-            self.single_process_switch.deselect()
+    def switch_event(self, switch_button):
+        if switch_button.get() == "Single":
+            self.dashboard_bindings.handle_single_switch(self.single_process_switch, self.batch_process_switch, self.single_frame, self.batch_frame)
+        elif switch_button.get() == "Batch":
+            self.dashboard_bindings.handle_batch_switch(self.single_process_switch, self.batch_process_switch, self.single_frame, self.batch_frame)
 
-    def browse_folder(self):
-        """Open folder dialog and set the selected path to the output folder entry"""
-        folder_path = filedialog.askdirectory()
-        if folder_path:
-            self.output_folder_entry.delete(0, 'end')
-            self.output_folder_entry.insert(0, folder_path)
+    def tps_rinex_button_event(self):
+        self.dashboard_bindings.execute_tps_rinex(self.execute_tps_rinex_button, self.execute_tps_rinex_frame, self.base_tps_entry, self.rover_tps_entry, self.base_obs_entry, self.rover_obs_entry, self.base_rover_pos_entry)
+        CTkNotification(self, "info", "TPS RINEX conversion successful", "right_bottom")
+
+    def rinex_rtk_button_event(self):
+        self.dashboard_bindings.execute_rinex_rtk(self.execute_rinex_rtk_button, self.rover_obs_entry, self.base_obs_entry, self.base_rover_pos_entry)
+        CTkNotification(self, "info", "RINEX to RTK Position conversion successful", "right_bottom")
+        
+    ###### Get Data ######
+
+    ###### Plot ######
 
 if __name__ == "__main__":
     app = App()

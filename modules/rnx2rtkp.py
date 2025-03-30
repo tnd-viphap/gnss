@@ -1,10 +1,14 @@
 import os
 import shutil
-import sys
-sys.path.append(os.path.join(os.path.abspath(__file__), "../../"))
 import subprocess
-import common.parser as cfg
+import sys
+import time
+
 import common.helpers as helpers
+import common.parser as cfg
+
+project_dir = str(cfg.DATA_DIR).replace("data", "")
+sys.path.append(os.path.join(project_dir, "modules").replace("\\", "/"))
 
 class RNX2RTKPProcessor:
     def __init__(self):
@@ -51,7 +55,7 @@ class RNX2RTKPProcessor:
         Process a group of files and remove rover files if successful
         """
         output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos")
-        success = self._exec_rnx2rtkp(
+        success = self.exec_rnx2rtkp(
             group["obs_rover_file"],
             group["obs_base_file"],
             group["nav_base_file"],
@@ -67,7 +71,7 @@ class RNX2RTKPProcessor:
         Process a group of files and remove all files if successful
         """
         output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos").replace("\\", "/")
-        success = self._exec_rnx2rtkp(
+        success = self.exec_rnx2rtkp(
             group["obs_rover_file"],
             group["obs_base_file"],
             group["nav_base_file"],
@@ -78,25 +82,24 @@ class RNX2RTKPProcessor:
             self._remove_all_files(group)
             pass
 
-    def _exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_rover_file, output_file):
+    def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_rover_file, output_file):
         """
         Execute the rnx2rtkp command
         """
+        for file in [obs_rover_file, obs_base_file, nav_rover_file]:
+            shutil.copy(file, self.cur_dir)
         try:
+            os.chdir(self.cur_dir)
+            cmd = f'{self.bin_file} -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_rover_file)[-1]}'
+            subprocess.call(cmd, shell=cfg.LOGGING)
+            time.sleep(1)
             for file in [obs_rover_file, obs_base_file, nav_rover_file]:
-                shutil.copy(file, self.cur_dir)
-        except:
-            pass
-        os.chdir(self.cur_dir)
-        cmd = f'{self.bin_file} -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_rover_file)[-1]}'
-        error_code = subprocess.call(cmd, shell=cfg.LOGGING)
-        try:
-            files_to_rm = [os.path.join(self.cur_dir, f).replace("\\", "/") for f in os.listdir(self.cur_dir) if 'base' in f or 'rove' in f]
-            for file in files_to_rm:
-                os.remove(file)
-        except:
-            pass
-        return error_code == 0
+                os.remove(os.path.join(self.cur_dir, os.path.split(file)[-1]))
+            os.chdir("..")
+            return True
+        except Exception as e:
+            print(f"Error executing rnx2rtkp: {e}")
+            return False
 
     def _remove_rover_files(self, group):
         """

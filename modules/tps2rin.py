@@ -1,13 +1,15 @@
 import os
 import subprocess
 import json
+import sys
 import common.parser as cfg
 import common.helpers as helpers
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../modules'))
+
 class TPS2RINProcessor:
     def __init__(self):
-        self.cur_dir = os.path.dirname(os.path.abspath(__file__))
-        self.bin_file = os.path.join(self.cur_dir, "tps2rin.exe").replace("\\", "/")
+        self.cur_dir = os.path.split(os.path.abspath(__file__))[0]
 
     def get_tps_file_names(self, dir_path):
         """
@@ -70,21 +72,23 @@ class TPS2RINProcessor:
         Process each file and update the log
         """
         for i in range(len(files_to_process)):
-            if self._exec_tps2rin(files_to_process[i], output_dir):
+            if self.exec_tps2rin(files_to_process[i], output_dir):
                 self._update_process_log(processed_path, files_to_process[i])
                 pass
             else:
                 print(f"-> {files_to_process[i]} processed. Skipping...")
                 continue
 
-    def _exec_tps2rin(self, tps_file_path, output_dir):
+    def exec_tps2rin(self, tps_file_path, output_dir):
         """
         Execute the tps2rin command for a single file
         """
         try:
-            cmd = f'{self.bin_file} -i "{tps_file_path}" -o "{output_dir}"'
-            error_code = subprocess.call(cmd, shell=cfg.LOGGING)
-            return error_code == 0
+            os.chdir(self.cur_dir)
+            cmd = f'tps2rin.exe -i "{tps_file_path}" -o "{output_dir}"'
+            subprocess.call(cmd, shell=cfg.LOGGING)
+            os.chdir("..")
+            return True
         except Exception as e:
             print(f"-> Error executing tps2rin: {e}")
             return False
