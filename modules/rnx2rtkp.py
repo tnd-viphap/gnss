@@ -54,7 +54,7 @@ class RNX2RTKPProcessor:
         """
         Process a group of files and remove rover files if successful
         """
-        output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos")
+        output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos").replace("\\", "/")
         success = self.exec_rnx2rtkp(
             group["obs_rover_file"],
             group["obs_base_file"],
@@ -80,7 +80,7 @@ class RNX2RTKPProcessor:
 
         if success:
             self._remove_all_files(group)
-            pass
+            print("Done")
 
     def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_rover_file, output_file):
         """
@@ -119,15 +119,16 @@ class RNX2RTKPProcessor:
 
 # Example usage:
 if __name__ == "__main__":
-    from tps2rin import TPS2RINProcessor
-    processor = RNX2RTKPProcessor()
-    # Example calls would go here
-    base_file_names = TPS2RINProcessor().get_tps_file_names(cfg.BASE_DATA_DIR_PROCESSED)
-    base_prefix = cfg.FTP_BASE_SETTINGS["prefix"]
-    rover_prefix = cfg.FTP_ROVERS2_SETTINGS[0]["prefix"]
-    rover_local_dir = os.path.join(cfg.DATA_DIR, cfg.FTP_ROVERS2_SETTINGS[0]["local_dir"]).replace("\\", "/")
-    rover_processed_dir = os.path.join(rover_local_dir, "process").replace("\\", "/")
-    output_dir = os.path.join(rover_local_dir, "output").replace("\\", "/")
-    groups = processor.generate_input_file_groups(base_file_names, rover_processed_dir, base_prefix, rover_prefix)
-    for group in groups:
-        processor.process_file_group(group, output_dir)
+    # from tps2rin import TPS2RINProcessor
+    # processor = RNX2RTKPProcessor()
+    # # Example calls would go here
+    # base_file_names = TPS2RINProcessor().get_tps_file_names(cfg.BASE_DATA_DIR_PROCESSED)
+    # base_prefix = cfg.FTP_BASE_SETTINGS["prefix"]
+    # rover_prefix = cfg.FTP_ROVERS2_SETTINGS[0]["prefix"]
+    # rover_local_dir = os.path.join(cfg.DATA_DIR, cfg.FTP_ROVERS2_SETTINGS[0]["local_dir"]).replace("\\", "/")
+    # rover_processed_dir = os.path.join(rover_local_dir, "process").replace("\\", "/")
+    # output_dir = os.path.join(rover_local_dir, "output").replace("\\", "/")
+    # groups = processor.generate_input_file_groups(base_file_names, rover_processed_dir, base_prefix, rover_prefix)
+    # for group in groups:
+    #     processor.process_file_group(group, output_dir)
+    None

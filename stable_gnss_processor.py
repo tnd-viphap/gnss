@@ -20,7 +20,6 @@ class GNSSProcessor:
         
         self.r2r = RNX2RTKPProcessor()
         self.t2r = TPS2RINProcessor()
-        self.rtkpos = RTKPos()
 
         helpers.create_dir_if_not_exists(os.path.join(os.path.split(os.path.abspath(__file__))[0], "data"))
         helpers.create_dir_if_not_exists(os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Base/"))
@@ -158,6 +157,7 @@ class GNSSProcessor:
 
     def _process_pos_files(self, output_file_path, output_dir, local_dir,
                           data_rover_east, data_rover_north, data_rover_up):
+        self.rtkpos = RTKPos(local_dir)
         self.rtkpos.create_output_file(output_file_path)
         rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt")
         rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
@@ -273,4 +273,3 @@ if __name__ == "__main__":
     print("Step 7: Data assembly")
     processor.merge_output_files()
     print("All Processes Done!")
-    

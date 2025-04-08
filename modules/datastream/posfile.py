@@ -6,8 +6,12 @@ import common.parser as cfg
 import common.helpers as helpers
 
 class RTKPos:
-    def __init__(self):
-        self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E(mm)", "Delta_N(mm)", "Delta_U(mm)"]
+    def __init__(self, local_dir):
+        self.local_dir = local_dir.replace("\\", "/")
+        if self.local_dir.split("/")[-1].startswith("Rover1"):
+            self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E1(mm)", "Delta_N1(mm)", "Delta_U1(mm)"]
+        elif self.local_dir.split("/")[-1].startswith("Rover2"):
+            self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E2(mm)", "Delta_N2(mm)", "Delta_U2(mm)"]
 
     # tao file output, neu file chua ton tai tao moi  them header cho file
     def create_output_file(self, file_path):
@@ -146,7 +150,7 @@ class RTKPos:
         u = (float(data[3]) - up) * 1000
         if abs(u) >= cfg.DATA_THRESHOLD:
             return None
-        # tra ve json  4 truong thoi gian, e,n,u
+        # tra ve json 4 truong: thoi gian, e,n,u
         return {
             "utc_time": datetime.strptime(data[0], "%Y/%m/%d %H:%M:%S.%f") + timedelta(hours=8),
             "e": e,

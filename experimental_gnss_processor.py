@@ -20,7 +20,6 @@ class GNSSProcessor:
         
         self.r2r = RNX2RTKPProcessor()
         self.t2r = TPS2RINProcessor()
-        self.rtkpos = RTKPos()
 
         helpers.create_dir_if_not_exists(os.path.join(os.path.split(os.path.abspath(__file__))[0], "data"))
         helpers.create_dir_if_not_exists(os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Base/"))
@@ -69,7 +68,7 @@ class GNSSProcessor:
         except Exception:
             return None
 
-    def process_base_files(self, start_date=None, start_time=None):
+    def fetch_base_files(self, start_date=None, start_time=None):
         downloader = FTPDownloader(cfg.FTP_BASE_SETTINGS)
         base_file_paths = downloader.get_unprocessed_files_in_remote_path(
             cfg.FTP_BASE_SETTINGS["data_dir"], 
@@ -80,27 +79,32 @@ class GNSSProcessor:
         downloader.download_files(base_file_paths, base_local_file_paths)
         downloader.disconnect()
 
+    def process_base_files(self):
         self.t2r.process_all_tps_files_in_path(
             cfg.BASE_DATA_DIR,
             cfg.BASE_DATA_DIR_PROCESSED,
             os.path.join(cfg.DATA_DIR, cfg.FTP_BASE_SETTINGS["local_dir"] + "/tpsprocess.txt")
         )
 
-    def process_rover_files(self, settings_list, start_date=None, start_time=None):
+    def fetch_rover_files(self, settings_list, start_date=None, start_time=None):
         for settings in settings_list:
             rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
             rover_data_dir = os.path.join(rover_local_dir, "raw")
 
-            # downloader = FTPDownloader(settings)
-            # rover_file_paths = downloader.get_unprocessed_files_in_remote_path(
-            #     settings["data_dir"], 
-            #     settings["prefix"], 
-            #     rover_data_dir
-            # )
-            # rover_local_file_paths = downloader.generate_local_file_paths(rover_data_dir, rover_file_paths, start_date, start_time)
-            # downloader.download_files(rover_file_paths, rover_local_file_paths)
-            # downloader.disconnect()
+            downloader = FTPDownloader(settings)
+            rover_file_paths = downloader.get_unprocessed_files_in_remote_path(
+                settings["data_dir"], 
+                settings["prefix"], 
+                rover_data_dir
+            )
+            rover_local_file_paths = downloader.generate_local_file_paths(rover_data_dir, rover_file_paths, start_date, start_time)
+            downloader.download_files(rover_file_paths, rover_local_file_paths)
+            downloader.disconnect()
 
+    def process_rover_files(self, settings_list):
+        for settings in settings_list:
+            rover_local_dir = os.path.join(cfg.DATA_DIR, settings["local_dir"])
+            rover_data_dir = os.path.join(rover_local_dir, "raw")
             rover_data_dir_processed = os.path.join(rover_local_dir, "process")
             self.t2r.process_all_tps_files_in_path(
                 rover_data_dir,
@@ -153,6 +157,7 @@ class GNSSProcessor:
 
     def _process_pos_files(self, output_file_path, output_dir, local_dir,
                           data_rover_east, data_rover_north, data_rover_up):
+        self.rtkpos = RTKPos(local_dir)
         self.rtkpos.create_output_file(output_file_path)
         rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt")
         rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
@@ -190,6 +195,7 @@ class GNSSProcessor:
                 data_rover_north,
                 data_rover_up
             )
+
             if not result:
                 continue
 
@@ -211,14 +217,20 @@ class GNSSProcessor:
                 or abs(averageZ - self.last_z) > cfg.DATA_THRESHOLD_DELTA_Z
             )
         ):
-            output_file.write(
-                "{},{},{},{}\n".format(
+            if not "{},{},{},{}\n".format(
                     ts,
                     "{:.5f}".format(averageX),
                     "{:.5f}".format(averageY),
                     "{:.5f}".format(averageZ)
+                ) in output_file.readlines():
+                output_file.write(
+                    "{},{},{},{}\n".format(
+                        ts,
+                        "{:.5f}".format(averageX),
+                        "{:.5f}".format(averageY),
+                        "{:.5f}".format(averageZ)
+                    )
                 )
-            )
 
     def merge_output_files(self):
         rv1_output = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Rover1/output.csv")
@@ -240,21 +252,25 @@ if __name__ == "__main__":
     print("Step 1: Initializing...\n")
     processor = GNSSProcessor()
     
-    #print("Step 2: Fetch and Pre-process Base...\n")
-    #processor.process_base_files()
+    print("Step 2: Fetch and Pre-process Base...\n")
+    processor.fetch_base_files()
+    processor.process_base_files()
     
-    #print("Step 3: Fetch and Pre-process data from Rover1...\n")
-    #processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    print("Step 3: Fetch and Pre-process data from Rover1...\n")
+    processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
-    # print("Step 4: Converting Rover1 raw data into POS data...")
-    # processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
+    print("Step 4: Converting Rover1 raw data into POS data...")
+    processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
     print("Step 5: Fetch and Pre-process data from Rover2...")
+    processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
     print("Step 6: Converting Rover2 raw data into POS data...")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
-    # print("Step 7: Data assembly")
-    # processor.merge_output_files()
-    # print("All Processes Done!")
+    print("Step 7: Data assembly")
+    processor.merge_output_files()
+    print("All Processes Done!")
+    
