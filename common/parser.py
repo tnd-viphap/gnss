@@ -29,5 +29,5 @@ DATA_ROVER2_EAST = config_json["data"]["rover2"]["east"]
 DATA_ROVER2_NORTH = config_json["data"]["rover2"]["north"]
 DATA_ROVER2_UP = config_json["data"]["rover2"]["up"]
 
-BASE_DATA_DIR = os.path.join(DATA_DIR, FTP_BASE_SETTINGS["local_dir"] + "\\raw")
-BASE_DATA_DIR_PROCESSED = os.path.join(DATA_DIR, FTP_BASE_SETTINGS["local_dir"] + "\\process")
+BASE_DATA_DIR = os.path.join(DATA_DIR, FTP_BASE_SETTINGS["local_dir"] + "/raw")
+BASE_DATA_DIR_PROCESSED = os.path.join(DATA_DIR, FTP_BASE_SETTINGS["local_dir"] + "/process")

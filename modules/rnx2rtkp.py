@@ -22,7 +22,7 @@ class RNX2RTKPProcessor:
         Returns list of dictionaries containing file paths for base and rover data
         """
         groups = []
-        for file_name in list(sorted(base_file_names, key=lambda x: x[-1])):
+        for file_name in list(sorted(base_file_names, key=lambda x: x[4:])):
             time_name = file_name[4:]
 
             file_paths = {

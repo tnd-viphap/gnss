@@ -1,5 +1,7 @@
 import json
 import os
+import time
+from importlib import reload
 from multiprocessing.pool import ThreadPool
 
 import pandas as pd
@@ -113,7 +115,7 @@ class GNSSProcessor:
             )
 
     def process_rnx2rtkp(self, settings_list, data_rover_east, data_rover_north, data_rover_up):
-        base_tps_file_names = self.t2r.get_tps_file_names(cfg.BASE_DATA_DIR_PROCESSED)
+        base_tps_file_names = self.t2r.get_tps_file_names(cfg.BASE_DATA_DIR_PROCESSED.replace("\\", "/"))
         base_file_prefix = cfg.FTP_BASE_SETTINGS["prefix"]
 
         for settings in settings_list:
@@ -159,6 +161,7 @@ class GNSSProcessor:
                           data_rover_east, data_rover_north, data_rover_up):
         self.rtkpos = RTKPos(local_dir)
         self.rtkpos.create_output_file(output_file_path)
+        time.sleep(1)
         rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt")
         rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
             output_dir,
@@ -217,31 +220,25 @@ class GNSSProcessor:
                 or abs(averageZ - self.last_z) > cfg.DATA_THRESHOLD_DELTA_Z
             )
         ):
-            if not "{},{},{},{}\n".format(
+            output_file.write(
+                "{},{},{},{}\n".format(
                     ts,
                     "{:.5f}".format(averageX),
                     "{:.5f}".format(averageY),
                     "{:.5f}".format(averageZ)
-                ) in output_file.readlines():
-                output_file.write(
-                    "{},{},{},{}\n".format(
-                        ts,
-                        "{:.5f}".format(averageX),
-                        "{:.5f}".format(averageY),
-                        "{:.5f}".format(averageZ)
-                    )
                 )
+            )
 
     def merge_output_files(self):
         rv1_output = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Rover1/output.csv")
-        rv2_output = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Rover1/output.csv")
+        rv2_output = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/Rover2/output.csv")
         df1 = pd.read_csv(rv1_output)
         df2 = pd.read_csv(rv2_output)
 
         df1['TIMESTAMP'] = pd.to_datetime(df1['TIMESTAMP'])
         df2['TIMESTAMP'] = pd.to_datetime(df2['TIMESTAMP'])
 
-        merged_df = pd.merge(df1, df2, on='TIMESTAMP', how='outer')
+        merged_df = pd.merge(df1, df2, on='TIMESTAMP', how='outer', suffixes=["", ""])
         merged_df['TIMESTAMP'] = merged_df['TIMESTAMP'].apply(lambda x: f'"{x}"')
         merged_df = merged_df.drop_duplicates(["TIMESTAMP"])
 
@@ -251,20 +248,21 @@ class GNSSProcessor:
 if __name__ == "__main__":
     print("Step 1: Initializing...\n")
     processor = GNSSProcessor()
+    reload(cfg)
     
     print("Step 2: Fetch and Pre-process Base...\n")
-    processor.fetch_base_files()
+    #processor.fetch_base_files()
     processor.process_base_files()
     
     print("Step 3: Fetch and Pre-process data from Rover1...\n")
-    processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    #processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
     print("Step 4: Converting Rover1 raw data into POS data...")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
     print("Step 5: Fetch and Pre-process data from Rover2...")
-    processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    #processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
     print("Step 6: Converting Rover2 raw data into POS data...")
@@ -273,4 +271,3 @@ if __name__ == "__main__":
     print("Step 7: Data assembly")
     processor.merge_output_files()
     print("All Processes Done!")
-    
