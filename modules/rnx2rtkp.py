@@ -59,21 +59,7 @@ class RNX2RTKPProcessor:
             group["nav_base_file"],
             output_file
         )
-
-    def process_file_group_and_remove(self, group, output_dir):
-        """
-        Process a group of files and remove all files if successful
-        """
-        output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos").replace("\\", "/")
-        os.chdir(self.cur_dir)
-        self.exec_rnx2rtkp(
-            group["obs_rover_file"],
-            group["obs_base_file"],
-            group["nav_base_file"],
-            output_file
-        )
-        self._remove_all_files(group)
-        print("Done")
+        self._remove_rover_files(group)
 
     def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_base_file, output_file):
         """
