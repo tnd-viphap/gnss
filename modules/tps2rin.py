@@ -3,6 +3,8 @@ import subprocess
 import json
 import sys
 import time
+import concurrent.futures
+import threading
 import common.parser as cfg
 import common.helpers as helpers
 
@@ -11,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../modules'))
 class TPS2RINProcessor:
     def __init__(self):
         self.cur_dir = os.path.split(os.path.abspath(__file__))[0]
+        self._log_lock = threading.Lock()
 
     def get_tps_file_names(self, dir_path):
         """
@@ -41,7 +44,9 @@ class TPS2RINProcessor:
         last_processed_file_path = self._get_last_processed_file(processed_path)
         need_process_files = self._get_files_to_process(input_dir, last_processed_file_path)
         
-        self._process_files(need_process_files, output_dir, processed_path)
+        if need_process_files:
+            self._process_files(need_process_files, output_dir, processed_path)
+            self._update_process_log(processed_path, need_process_files[-1])
 
     def _prepare_output_directory(self, output_dir):
         """
@@ -79,15 +84,29 @@ class TPS2RINProcessor:
 
     def _process_files(self, files_to_process, output_dir, processed_path):
         """
-        Process each file and update the log
+        Process files in parallel using ThreadPoolExecutor
         """
-        for i in range(len(files_to_process)):
-            if self.exec_tps2rin(files_to_process[i], output_dir):
-                self._update_process_log(processed_path, files_to_process[i])
-                pass
-            else:
-                print(f"-> {files_to_process[i]} processed. Skipping...")
-                continue
+        max_workers = min(32, (os.cpu_count() or 1) + 4)  # Use optimal number of threads
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Create a future for each file
+            future_to_file = {
+                executor.submit(self.exec_tps2rin, file_path, output_dir): file_path 
+                for file_path in files_to_process
+            }
+            
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    success = future.result()
+                    if success:
+                        print(f"-> Successfully processed: {file_path}")
+                        self._update_process_log(processed_path, file_path)
+                    else:
+                        print(f"-> Failed to process: {file_path}")
+                except Exception as e:
+                    print(f"-> Error processing {file_path}: {e}")
 
     def exec_tps2rin(self, tps_file_path, output_dir):
         """
@@ -105,20 +124,21 @@ class TPS2RINProcessor:
 
     def _update_process_log(self, processed_path, file_path):
         """
-        Append new processed file information to the log file
+        Update the process log with thread safety
         """
         try:
-            # Add new entry
-            file_path = file_path.replace("\\", "/")
-            new_entry = [
-                {
-                    "file_path": file_path
-                }
-            ]
+            with self._log_lock:
+                # Add new entry
+                file_path = file_path.replace("\\", "/")
+                new_entry = [
+                    {
+                        "file_path": file_path
+                    }
+                ]
 
-            # Write back all data
-            with open(processed_path, 'w') as log_file:
-                json.dump(new_entry, log_file, indent=4)
+                # Write back all data
+                with open(processed_path, 'w') as log_file:
+                    json.dump(new_entry, log_file, indent=4)
 
         except Exception as e:
             print(f"Error updating process log: {e}")
