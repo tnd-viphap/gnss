@@ -7,13 +7,10 @@ import time
 import common.helpers as helpers
 import common.parser as cfg
 
-project_dir = str(cfg.DATA_DIR).replace("data", "")
-sys.path.append(os.path.join(project_dir, "modules").replace("\\", "/"))
 
 class RNX2RTKPProcessor:
     def __init__(self):
         self.cur_dir = os.path.split(os.path.abspath(__file__))[0]
-        self.bin_file = os.path.join(self.cur_dir, "rnx2rtkp.exe").replace("\\", "/")
         self.config_file = os.path.join(self.cur_dir, cfg.RNX2RTKP_CONFIG_FILE).replace("\\", "/")
 
     def generate_input_file_groups(self, base_file_names, rover_processed_dir, base_prefix, rover_prefix):
@@ -22,7 +19,8 @@ class RNX2RTKPProcessor:
         Returns list of dictionaries containing file paths for base and rover data
         """
         groups = []
-        for file_name in list(sorted(base_file_names, key=lambda x: x[4:])):
+        files = list(sorted(base_file_names, key=lambda x: x[4:]))
+        for file_name in files:
             time_name = file_name[4:]
 
             file_paths = {
@@ -35,7 +33,6 @@ class RNX2RTKPProcessor:
             if self._check_all_files_exist(file_paths):
                 file_paths["time_name"] = time_name
                 groups.append(file_paths)
-
         return groups
 
     def _check_all_files_exist(self, file_paths):
@@ -46,7 +43,7 @@ class RNX2RTKPProcessor:
             file_paths["obs_base_file"],
             file_paths["nav_base_file"],
             file_paths["obs_rover_file"],
-            file_paths["nav_base_file"]
+            file_paths["nav_rover_file"]
         ]
         return helpers.check_files_exist(required_files)
 
@@ -55,51 +52,47 @@ class RNX2RTKPProcessor:
         Process a group of files and remove rover files if successful
         """
         output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos").replace("\\", "/")
-        success = self.exec_rnx2rtkp(
+        os.chdir(self.cur_dir)
+        _ = self.exec_rnx2rtkp(
             group["obs_rover_file"],
             group["obs_base_file"],
             group["nav_base_file"],
             output_file
         )
-
-        if success:
-            self._remove_rover_files(group)
-            print("Done")
 
     def process_file_group_and_remove(self, group, output_dir):
         """
         Process a group of files and remove all files if successful
         """
         output_file = os.path.join(output_dir, f"output_{group['time_name']}.pos").replace("\\", "/")
-        success = self.exec_rnx2rtkp(
+        os.chdir(self.cur_dir)
+        self.exec_rnx2rtkp(
             group["obs_rover_file"],
             group["obs_base_file"],
             group["nav_base_file"],
             output_file
         )
+        self._remove_all_files(group)
+        print("Done")
 
-        if success:
-            self._remove_all_files(group)
-            print("Done")
-
-    def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_rover_file, output_file):
+    def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_base_file, output_file):
         """
         Execute the rnx2rtkp command
         """
-        for file in [obs_rover_file, obs_base_file, nav_rover_file]:
-            shutil.copy(file, self.cur_dir)
-        try:
-            os.chdir(self.cur_dir)
-            cmd = f'{self.bin_file} -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_rover_file)[-1]}'
-            subprocess.call(cmd, shell=cfg.LOGGING)
-            time.sleep(1)
-            for file in [obs_rover_file, obs_base_file, nav_rover_file]:
-                os.remove(os.path.join(self.cur_dir, os.path.split(file)[-1]))
-            os.chdir("..")
-            return True
-        except Exception as e:
-            print(f"Error executing rnx2rtkp: {e}")
+        for file in [obs_rover_file, obs_base_file, nav_base_file]:
+           shutil.move(file, self.cur_dir)
+        cmd = f'rnx2rtkp -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_base_file)[-1]}'
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        results = process.communicate()
+        print(results[1].decode())
+        if results[1].decode():
+            for file in [obs_rover_file, obs_base_file, nav_base_file]:
+                shutil.move(os.path.join(self.cur_dir, os.path.split(file)[1]), os.path.split(file)[0])
             return False
+        else:
+            for file in [obs_rover_file, obs_base_file, nav_base_file]:
+                os.remove(os.path.join(self.cur_dir, os.path.split(file)[1]))
+            return True
 
     def _remove_rover_files(self, group):
         """

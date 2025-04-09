@@ -2,6 +2,7 @@ import os
 import subprocess
 import json
 import sys
+import time
 import common.parser as cfg
 import common.helpers as helpers
 
@@ -28,6 +29,15 @@ class TPS2RINProcessor:
         Process all TPS files in the input directory that haven't been processed yet
         """
         self._prepare_output_directory(output_dir)
+        if not os.path.exists(processed_path):
+            with open(processed_path, "w") as file:
+                json.dump([
+                    {
+                        "file_path": ""
+                    }
+                ], file, indent=4)
+                file.close()
+        time.sleep(1)
         last_processed_file_path = self._get_last_processed_file(processed_path)
         need_process_files = self._get_files_to_process(input_dir, last_processed_file_path)
         

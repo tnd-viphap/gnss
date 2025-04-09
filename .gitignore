@@ -8,3 +8,5 @@ __pycache__
 publishers/
 dev/
 .vscode/
+modules/base*
+modules/rove*

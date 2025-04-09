@@ -11,7 +11,10 @@ def remove_file(file_path):
 
 # hàm kiểm tra thư mục đã được tạo hay chưa
 def check_files_exist(file_paths):
-    return all(os.path.exists(path) for path in file_paths)
+    for file in file_paths:
+        if not os.path.exists(file):
+            return False
+    return True
 
 # tạo folder mới khi folder chưa được tạo
 def create_dir_if_not_exists(dir):

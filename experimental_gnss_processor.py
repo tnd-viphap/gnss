@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import time
 from importlib import reload
 from multiprocessing.pool import ThreadPool
@@ -162,7 +163,7 @@ class GNSSProcessor:
         self.rtkpos = RTKPos(local_dir)
         self.rtkpos.create_output_file(output_file_path)
         time.sleep(1)
-        rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt")
+        rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt").replace("\\", "/")
         rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
             output_dir,
             rtkp_output_log_path
@@ -251,23 +252,23 @@ if __name__ == "__main__":
     reload(cfg)
     
     print("Step 2: Fetch and Pre-process Base...\n")
-    #processor.fetch_base_files()
+    processor.fetch_base_files()
     processor.process_base_files()
     
     print("Step 3: Fetch and Pre-process data from Rover1...\n")
-    #processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
-    print("Step 4: Converting Rover1 raw data into POS data...")
+    print("Step 4: Converting Rover1 raw data into POS data...\n")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
-    print("Step 5: Fetch and Pre-process data from Rover2...")
-    #processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    print("Step 5: Fetch and Pre-process data from Rover2...\n")
+    processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
-    print("Step 6: Converting Rover2 raw data into POS data...")
+    print("Step 6: Converting Rover2 raw data into POS data...\n")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
-    print("Step 7: Data assembly")
+    print("Step 7: Data assembly\n")
     processor.merge_output_files()
     print("All Processes Done!")
