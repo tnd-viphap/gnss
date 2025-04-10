@@ -275,7 +275,7 @@ if __name__ == "__main__":
     
     # print("Step 5: Fetch and Pre-process data from Rover2...\n")
     # processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
-    # processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
     print("Step 6: Converting Rover2 raw data into POS data...\n")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
