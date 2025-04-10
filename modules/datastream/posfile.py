@@ -39,7 +39,7 @@ class RTKPos:
         need_process_files = []
         for file_path in file_paths:
             if last_processed_file_path and file_path <= last_processed_file_path:
-                continue
+                break
             need_process_files.append(file_path.replace("\\", "/"))
         return need_process_files
     

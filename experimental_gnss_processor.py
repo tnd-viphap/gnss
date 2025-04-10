@@ -145,6 +145,18 @@ class GNSSProcessor:
 
         helpers.create_dir_if_not_exists(rover_output_dir)
         
+        # Initialize RTKPos and create output file
+        self.rtkpos = RTKPos(rover_local_dir)
+        self.rtkpos.create_output_file(rover_output_file_path)
+        time.sleep(1)
+        
+        # Get initial last output
+        last_output = self.get_last_output(rover_output_file_path)
+        if last_output:
+            self.last_x = last_output["averageX"]
+            self.last_y = last_output["averageY"]
+            self.last_z = last_output["averageZ"]
+        
         # Process files in batches of 10
         batch_size = 10
         pool = ThreadPool(min(32, (os.cpu_count() or 1) + 4))
@@ -153,48 +165,37 @@ class GNSSProcessor:
             batch = tps_file_groups[i:i + batch_size]
             print(f"Processing batch {i//batch_size + 1} of {(len(tps_file_groups) + batch_size - 1)//batch_size}")
             
+            # Process the batch
             pool_payload = [(file_group, rover_output_dir) for file_group in batch]
             pool.starmap(self.r2r.process_file_group, pool_payload)
             
-            # Process POS files for this batch
-            self._process_pos_files(
-                rover_output_file_path,
+            # Get new POS files from this batch
+            rtkp_output_log_path = os.path.join(rover_local_dir, "posprocess.txt").replace("\\", "/")
+            rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
                 rover_output_dir,
-                rover_local_dir,
-                data_rover_east,
-                data_rover_north,
-                data_rover_up
+                rtkp_output_log_path
             )
+            
+            # Process only the new POS files
+            with open(rover_output_file_path, "a") as output_file:
+                self._process_rtkp_files(
+                    rtkp_output_file_paths,
+                    rtkp_output_log_path,
+                    output_file,
+                    data_rover_east,
+                    data_rover_north,
+                    data_rover_up
+                )
+            
+            # Clean up processed files
+            for file_path in rtkp_output_file_paths:
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print(f"-> Error removing file {file_path}: {e}")
         
         pool.close()
         pool.join()
-
-    def _process_pos_files(self, output_file_path, output_dir, local_dir,
-                          data_rover_east, data_rover_north, data_rover_up):
-        self.rtkpos = RTKPos(local_dir)
-        self.rtkpos.create_output_file(output_file_path)
-        time.sleep(1)
-        rtkp_output_log_path = os.path.join(local_dir, "posprocess.txt").replace("\\", "/")
-        rtkp_output_file_paths = self.rtkpos.get_unprocessed_rtkp_output_file_paths(
-            output_dir,
-            rtkp_output_log_path
-        )
-
-        last_output = self.get_last_output(output_file_path)
-        if last_output:
-            self.last_x = last_output["averageX"]
-            self.last_y = last_output["averageY"]
-            self.last_z = last_output["averageZ"]
-
-        with open(output_file_path, "a") as output_file:
-            self._process_rtkp_files(
-                rtkp_output_file_paths,
-                rtkp_output_log_path,
-                output_file,
-                data_rover_east,
-                data_rover_north,
-                data_rover_up
-            )
 
     def _process_rtkp_files(self, file_paths, log_path, output_file,
                            data_rover_east, data_rover_north, data_rover_up):
