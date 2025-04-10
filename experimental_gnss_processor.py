@@ -145,18 +145,29 @@ class GNSSProcessor:
 
         helpers.create_dir_if_not_exists(rover_output_dir)
         
-        pool = ThreadPool(50)
-        pool_payload = [(file_group, rover_output_dir) for file_group in tps_file_groups]
-        pool.starmap(self.r2r.process_file_group, pool_payload)
-
-        self._process_pos_files(
-            rover_output_file_path,
-            rover_output_dir,
-            rover_local_dir,
-            data_rover_east,
-            data_rover_north,
-            data_rover_up
-        )
+        # Process files in batches of 10
+        batch_size = 10
+        pool = ThreadPool(min(32, (os.cpu_count() or 1) + 4))
+        
+        for i in range(0, len(tps_file_groups), batch_size):
+            batch = tps_file_groups[i:i + batch_size]
+            print(f"Processing batch {i//batch_size + 1} of {(len(tps_file_groups) + batch_size - 1)//batch_size}")
+            
+            pool_payload = [(file_group, rover_output_dir) for file_group in batch]
+            pool.starmap(self.r2r.process_file_group, pool_payload)
+            
+            # Process POS files for this batch
+            self._process_pos_files(
+                rover_output_file_path,
+                rover_output_dir,
+                rover_local_dir,
+                data_rover_east,
+                data_rover_north,
+                data_rover_up
+            )
+        
+        pool.close()
+        pool.join()
 
     def _process_pos_files(self, output_file_path, output_dir, local_dir,
                           data_rover_east, data_rover_north, data_rover_up):
@@ -251,24 +262,24 @@ if __name__ == "__main__":
     processor = GNSSProcessor()
     reload(cfg)
     
-    print("Step 2: Fetch and Pre-process Base...\n")
-    processor.fetch_base_files()
-    processor.process_base_files()
+    # print("Step 2: Fetch and Pre-process Base...\n")
+    # processor.fetch_base_files()
+    # processor.process_base_files()
     
-    print("Step 3: Fetch and Pre-process data from Rover1...\n")
-    processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
-    processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    # print("Step 3: Fetch and Pre-process data from Rover1...\n")
+    # processor.fetch_rover_files(cfg.FTP_ROVERS1_SETTINGS)
+    # processor.process_rover_files(cfg.FTP_ROVERS1_SETTINGS)
 
-    print("Step 4: Converting Rover1 raw data into POS data...\n")
-    processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
+    # print("Step 4: Converting Rover1 raw data into POS data...\n")
+    # processor.process_rnx2rtkp(cfg.FTP_ROVERS1_SETTINGS, cfg.DATA_ROVER1_EAST, cfg.DATA_ROVER1_NORTH, cfg.DATA_ROVER1_UP)
     
-    print("Step 5: Fetch and Pre-process data from Rover2...\n")
-    processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
-    processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    # print("Step 5: Fetch and Pre-process data from Rover2...\n")
+    # processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    # processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
     print("Step 6: Converting Rover2 raw data into POS data...\n")
     processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
-    print("Step 7: Data assembly\n")
-    processor.merge_output_files()
-    print("All Processes Done!")
+    # print("Step 7: Data assembly\n")
+    # processor.merge_output_files()
+    # print("All Processes Done!")
