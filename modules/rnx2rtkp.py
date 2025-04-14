@@ -60,27 +60,26 @@ class RNX2RTKPProcessor:
             output_file
         )
         self._remove_rover_files(group)
+        # self.remove_all_files(group)
 
     def exec_rnx2rtkp(self, obs_rover_file, obs_base_file, nav_base_file, output_file):
         """
         Execute the rnx2rtkp command
         """
-        for file in [obs_rover_file, obs_base_file, nav_base_file]:
-            if file == obs_rover_file:
-                os.system(f"mv {file} {self.cur_dir}")
-            else:
-                shutil.copy(file, self.cur_dir)
-        
-        cmd = f'rnx2rtkp -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_base_file)[-1]}'
-        process = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        results = process.communicate()
-        print(results[1].decode())
-        if results[1].decode():
-            return False
-        else:
+        try:
+            for file in [obs_rover_file, obs_base_file, nav_base_file]:
+                if file == obs_rover_file:
+                    shutil.move(file, self.cur_dir)
+                else:
+                    shutil.copy(file, self.cur_dir)
+            cmd = f'rnx2rtkp -k {self.config_file} -s , -o {output_file} {os.path.split(obs_rover_file)[-1]} {os.path.split(obs_base_file)[-1]} {os.path.split(nav_base_file)[-1]}'
+            process = subprocess.Popen(cmd, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process.communicate()
             for file in [obs_rover_file, obs_base_file, nav_base_file]:
                 os.remove(os.path.join(self.cur_dir, os.path.split(file)[1]))
             return True
+        except:
+            return False
 
     def _remove_rover_files(self, group):
         """

@@ -186,11 +186,11 @@ class GNSSProcessor:
                     data_rover_north,
                     data_rover_up
                 )
-            
+            time.sleep(1)
             # Clean up processed files
             for file_path in rtkp_output_file_paths:
                 try:
-                    os.remove(file_path)
+                    os.remove(file_path.replace("\\", "/"))
                 except Exception as e:
                     print(f"-> Error removing file {file_path}: {e}")
         
@@ -254,6 +254,7 @@ class GNSSProcessor:
         merged_df = pd.merge(df1, df2, on='TIMESTAMP', how='outer', suffixes=["", ""])
         merged_df['TIMESTAMP'] = merged_df['TIMESTAMP'].apply(lambda x: f'"{x}"')
         merged_df = merged_df.drop_duplicates(["TIMESTAMP"])
+        merged_df = merged_df.dropna()
 
         output_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "data/output.csv")
         merged_df.to_csv(output_file, index=False, quoting=3)
@@ -276,11 +277,11 @@ if __name__ == "__main__":
     
     # print("Step 5: Fetch and Pre-process data from Rover2...\n")
     # processor.fetch_rover_files(cfg.FTP_ROVERS2_SETTINGS)
-    processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
+    # processor.process_rover_files(cfg.FTP_ROVERS2_SETTINGS)
     
-    print("Step 6: Converting Rover2 raw data into POS data...\n")
-    processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
+    # print("Step 6: Converting Rover2 raw data into POS data...\n")
+    # processor.process_rnx2rtkp(cfg.FTP_ROVERS2_SETTINGS, cfg.DATA_ROVER2_EAST, cfg.DATA_ROVER2_NORTH, cfg.DATA_ROVER2_UP)
     
-    # print("Step 7: Data assembly\n")
-    # processor.merge_output_files()
-    # print("All Processes Done!")
+    print("Step 7: Data assembly\n")
+    processor.merge_output_files()
+    print("All Processes Done!")
