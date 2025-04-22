@@ -44,6 +44,7 @@ from tkinterdnd2 import DND_FILES
 from common.helpers import Signal
 import common.parser as cfg
 from modules.datastream.ftp import FTPDownloader
+from common.fonts.font_manager import FontManager
 
 from .src.util.CTkGif import CTkGif
 from .src.util.py_win_style import set_opacity
@@ -523,6 +524,9 @@ class CTkMessageBox(ctk.CTkToplevel):
         
         # Center the dialog
         self.center_dialog()
+
+        # Font manager
+        self.font_manager = FontManager()
         
         # Create main container
         self.container = ctk.CTkFrame(self, fg_color="transparent")
@@ -539,27 +543,47 @@ class CTkMessageBox(ctk.CTkToplevel):
         self.message_label = ctk.CTkLabel(
             self.container,
             text=message,
-            font=parent.font_manager.get_font("content-body"),
+            font=self.font_manager.get_font("content-body"),
             image=self.error_image,
             compound="left",
             wraplength=250
         )
         self.message_label.pack(pady=(0, 20))
         
+        # Button frame
+        button_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        button_frame.pack(fill="x")
+        
+        # Center the button frame
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+        
         # OK button
         self.ok_button = ctk.CTkButton(
-            self.container,
+            button_frame,
             text="OK",
             width=100,
-            command=self.destroy
+            command=lambda: self.button_event("OK")
         )
-        self.ok_button.pack()
+        self.ok_button.grid(row=0, column=0, padx=(0, 5))
         
-        # Bind Enter key to close dialog
-        self.bind('<Return>', lambda e: self.destroy())
+        # Cancel button
+        self.cancel_button = ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            width=100,
+            command=lambda: self.button_event("Cancel")
+        )
+        self.cancel_button.grid(row=0, column=1, padx=(5, 0))
+        
+        # Bind Enter key to OK button
+        self.bind('<Return>', lambda e: self.button_event("OK"))
         
         # Set focus to OK button
         self.ok_button.focus_set()
+        
+        # Initialize result
+        self.result = None
         
     def center_dialog(self):
         """Center the dialog on the screen"""
@@ -569,6 +593,17 @@ class CTkMessageBox(ctk.CTkToplevel):
         x = (self.winfo_screenwidth() // 2) - (width // 2)
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def button_event(self, button):
+        """Handle button click"""
+        self.result = button
+        self.destroy()
+        
+    def get(self):
+        """Get the dialog result"""
+        if self.winfo_exists():
+            self.master.wait_window(self)
+        return self.result
 
 
 class CTkAlert(ctk.CTkToplevel):
@@ -1296,3 +1331,500 @@ class CTkTreeview(ctk.CTkFrame):
                 self.insert_items(item['children'], id)
             else:
                 self.treeview.insert(parent, 'end', text=item)
+
+
+class CustomParametersDialog(ctk.CTkToplevel):
+    def __init__(self, parent, config_file, config_combobox, delete_button):
+        super().__init__(parent)
+        
+        # Initialize result
+        self.result = None
+        
+        # Configure dialog window
+        self.title("Custom Parameters")
+        self.geometry("600x700")
+        self.resizable(False, False)
+        self.transient(parent)  # Make dialog modal
+        self.grab_set()  # Make dialog modal
+        
+        # Center the dialog
+        self.center_dialog()
+
+        self.font_manager = FontManager()
+        self.config_combobox = config_combobox
+        self.delete_button = delete_button
+        
+        # Create main container
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Create scrollable frame
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.container)
+        self.scrollable_frame.pack(fill="both", expand=True)
+        
+        # Load and parse config file
+        self.parameters = self.load_config_file(config_file)
+        
+        # Create parameter widgets
+        self.parameter_widgets = {}
+        for key, value in self.parameters.items():
+            self.create_parameter_widget(key, value)
+        
+        # Button frame
+        button_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Save button
+        self.save_button = ctk.CTkButton(
+            button_frame,
+            text="Save new parameters",
+            font=self.font_manager.get_font("content-body"),
+            command=self.save_parameters
+        )
+        self.save_button.pack(fill="x", pady=(0, 10))
+        
+        # Close button
+        self.close_button = ctk.CTkButton(
+            button_frame,
+            text="Close",
+            font=self.font_manager.get_font("content-body"),
+            command=self.close_dialog
+        )
+        self.close_button.pack(fill="x")
+        
+        # Bind Enter key to Save button
+        self.bind('<Return>', lambda e: self.save_parameters())
+        
+        # Set focus to Save button
+        self.save_button.focus_set()
+        
+        # Bind window close event
+        self.protocol("WM_DELETE_WINDOW", self.close_dialog)
+        
+    def close_dialog(self):
+        """Close the dialog without saving"""
+        self.result = None
+        self.destroy()
+        
+    def get(self):
+        """Get the dialog result"""
+        return self.result
+        
+    def center_dialog(self):
+        """Center the dialog on the screen"""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def load_config_file(self, config_file):
+        """Load and parse config file"""
+        parameters = {}
+        config_path = os.path.join("modules/paramslib", config_file)
+        
+        try:
+            with open(config_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                        
+                    # Split line into key and value
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Check if line has options (text after :)
+                        if '#' in value:
+                            value, options = value.split('#', 1)
+                            value = value.strip()
+                            options = options.strip()
+                            if ':' in options:
+                                options = options.split(':', 1)[1].strip()
+                                # Parse options and remove numeric prefixes
+                                parsed_options = []
+                                for opt in options.split(','):
+                                    opt = opt.strip()
+                                    # Remove numeric prefix if it exists
+                                    if ':' in opt:
+                                        opt = opt.split(':', 1)[1].strip()
+                                        if ")" in opt:
+                                            opt = opt.replace(")", "")
+                                    parsed_options.append(opt)
+                                parameters[key] = {
+                                    'value': value,
+                                    'options': parsed_options
+                                }
+                            else:
+                                parameters[key] = {'value': value}
+                        else:
+                            parameters[key] = {'value': value}
+        except Exception as e:
+            print(f"Error loading config file: {e}")
+            
+        return parameters
+        
+    def create_parameter_widget(self, key, param_data):
+        """Create widget for a parameter"""
+        frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
+        frame.pack(fill="x", pady=5)
+        
+        # Key label
+        key_label = ctk.CTkLabel(
+            frame,
+            text=key,
+            font=self.font_manager.get_font("content-body"),
+            anchor="w",
+            width=200
+        )
+        key_label.pack(side="left", padx=(15, 10), anchor="nw")
+        
+        # Special handling for pos1-navsys
+        if key == "pos1-navsys":
+            # Create a frame for checkboxes
+            checkbox_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            checkbox_frame.pack(side="left", fill="x", expand=True)
+            
+            # Parse the current value to determine which systems are enabled
+            current_value = int(param_data['value'])
+            self.navsys_checkboxes = {}
+            
+            # Define navigation systems and their values
+            nav_systems = {
+                "GPS": 1,
+                "SBAS": 2,
+                "GLONASS": 4,
+                "GALILEO": 8,
+                "QZSS": 16,
+                "BDS": 32,
+                "NAVIC": 64
+            }
+            
+            # Create checkboxes in a grid layout
+            row = 0
+            col = 0
+            max_cols = 3  # Number of columns in the grid
+            
+            for system, value in nav_systems.items():
+                var = ctk.BooleanVar(value=(current_value & value) != 0)
+                checkbox = ctk.CTkCheckBox(
+                    checkbox_frame,
+                    text=system,
+                    variable=var,
+                    height=20,
+                    width=20,
+                    checkbox_height=20,
+                    checkbox_width=20,
+                    font=self.font_manager.get_font("content-body")
+                )
+                checkbox.grid(row=row, column=col, padx=10, pady=5, sticky="w")
+                self.navsys_checkboxes[system] = (var, value)
+                
+                # Move to next column or row
+                col += 1
+                if col >= max_cols:
+                    col = 0
+                    row += 1
+            
+            # Store the frame instead of individual widgets
+            self.parameter_widgets[key] = checkbox_frame
+            
+        else:
+            # Value widget for other parameters
+            if 'options' in param_data:
+                # Create combobox for parameters with options
+                value_var = ctk.StringVar(value=param_data['value'])
+                value_widget = ctk.CTkComboBox(
+                    frame,
+                    values=param_data['options'],
+                    variable=value_var,
+                    font=self.font_manager.get_font("content-body"),
+                    width=300
+                )
+            else:
+                # Create entry for parameters without options
+                value_var = ctk.StringVar(value=param_data['value'])
+                value_widget = ctk.CTkEntry(
+                    frame,
+                    textvariable=value_var,
+                    font=self.font_manager.get_font("content-body"),
+                    width=300
+                )
+                
+            value_widget.pack(side="left", fill="x", expand=True)
+            
+            # Store widget reference
+            self.parameter_widgets[key] = value_widget
+            
+    def save_parameters(self):
+        """Save parameters to a new config file"""
+        # Get current timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_filename = f"custom_{timestamp}.conf"
+        new_filepath = os.path.join("modules/paramslib", new_filename)
+        
+        try:
+            with open(new_filepath, 'w') as f:
+                # Write header
+                f.write(f"# Custom parameters (created {datetime.now().strftime('%Y/%m/%d %H:%M:%S')})\n\n")
+                
+                # Write parameters
+                for key, widget in self.parameter_widgets.items():
+                    if key == "pos1-navsys":
+                        # Calculate total value for navsys
+                        total_value = 0
+                        for system, (var, value) in self.navsys_checkboxes.items():
+                            if var.get():
+                                total_value += value
+                        f.write(f"{key}={total_value}          # (1:gps+2:sbas+4:glo+8:gal+16:qzs+32:bds+64:navic)\n")
+                    elif isinstance(widget, ctk.CTkComboBox):
+                        value = widget.get()
+                        # Get the original options for this parameter
+                        options = self.parameters[key].get('options', [])
+                        if options:
+                            # Format options as they appear in s2.conf
+                            options_str = "(" + ",".join([f"{i+1}:{opt}" for i, opt in enumerate(options)]) + ")"
+                            f.write(f"{key}={value}          # {options_str}\n")
+                        else:
+                            f.write(f"{key}={value}\n")
+                    else:
+                        value = widget.get()
+                        f.write(f"{key}={value}\n")
+            
+            # Add new file to parent's combobox
+            parent = self.master
+            if hasattr(parent, 'config_combobox'):
+                current_values = list(parent.config_combobox.cget("values"))
+                if new_filename not in current_values:
+                    current_values.append(new_filename)
+                    parent.config_combobox.configure(values=current_values)
+                    parent.config_var.set(new_filename)
+            
+            self.result = new_filename
+            if self.config_combobox.get().startswith("custom_"):
+                self.delete_button.configure(state="normal")
+            self.destroy()
+            
+        except Exception as e:
+            print(f"Error saving parameters: {e}")
+            self.result = None
+            
+    def get(self):
+        """Get the dialog result"""
+        if self.winfo_exists():
+            self.master.wait_window(self)
+        return self.result
+
+
+class RTKSettingsDialog(ctk.CTkToplevel):
+    def __init__(self, parent, current_settings):
+        super().__init__(parent)
+        
+        # Initialize result
+        self.result = None
+        
+        # Configure dialog window
+        self.title("Processing Settings")
+        self.geometry("450x250")
+        self.resizable(False, False)
+        self.transient(parent)  # Make dialog modal
+        self.grab_set()  # Make dialog modal
+        
+        # Center the dialog
+        self.center_dialog()
+
+        self.font_manager = FontManager()
+        
+        # Create main container
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Plot solution checkbox
+        self.plot_solution_var = ctk.BooleanVar(value=current_settings["plot_solution"])
+        self.plot_solution_checkbox = ctk.CTkCheckBox(
+            self.container,
+            text="Plot solution",
+            variable=self.plot_solution_var,
+            font=self.font_manager.get_font("content-body")
+        )
+        self.plot_solution_checkbox.pack(fill="x", pady=(0, 20))
+        
+        # Configuration file selection
+        config_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        config_frame.pack(fill="x", pady=(0, 20))
+        
+        config_label = ctk.CTkLabel(
+            config_frame,
+            text="Processing template:",
+            font=self.font_manager.get_font("content-body")
+        )
+        config_label.pack(side="left", padx=(0, 10))
+        
+        # Get list of conf files from paramslib directory
+        self.conf_files = self.get_conf_files()
+        
+        # Set initial value to current config file if it exists in the list
+        current_config = current_settings["config_file"]
+        if current_config in self.conf_files:
+            initial_config = current_config
+        else:
+            initial_config = self.conf_files[0] if self.conf_files else ""
+            
+        self.config_var = ctk.StringVar(value=initial_config)
+        self.config_combobox = ctk.CTkComboBox(
+            config_frame,
+            values=self.conf_files,
+            variable=self.config_var,
+            font=self.font_manager.get_font("content-body"),
+            width=200
+        )
+        self.config_combobox.pack(side="left", padx=(0, 10))
+        
+        # Delete button for custom configs
+        self.delete_button = ctk.CTkButton(
+            config_frame,
+            text="Delete",
+            width=60,
+            font=self.font_manager.get_font("content-body"),
+            command=self.delete_config,
+            fg_color="red",
+            hover_color="darkred"
+        )
+        self.delete_button.pack(side="left")
+        
+        # Define Custom Parameters button
+        self.define_params_button = ctk.CTkButton(
+            self.container,
+            text="Define Custom Parameters",
+            font=self.font_manager.get_font("content-body"),
+            command=self.define_custom_params
+        )
+        self.define_params_button.pack(fill="x", pady=(20, 10))
+        
+        # Save button
+        self.ok_button = ctk.CTkButton(
+            self.container,
+            text="Save",
+            font=self.font_manager.get_font("content-body"),
+            command=self.ok_event
+        )
+        self.ok_button.pack(fill="x", pady=(0, 0))
+        
+        # Bind Enter key to Save button
+        self.bind('<Return>', lambda e: self.ok_event())
+        
+        # Set focus to Save button
+        self.ok_button.focus_set()
+        
+        # Update delete button state
+        self.update_delete_button_state()
+        
+        # Bind window close event
+        self.protocol("WM_DELETE_WINDOW", self.close_dialog)
+        
+    def close_dialog(self):
+        """Close the dialog without saving"""
+        self.result = None
+        self.destroy()
+        
+    def get(self):
+        """Get the dialog result"""
+        return self.result
+
+    def update_delete_button_state(self):
+        """Update delete button state based on selected config file"""
+        selected_file = self.config_var.get()
+        # Enable delete button only for custom configs
+        if selected_file.startswith("custom_"):
+            self.delete_button.configure(state="normal")
+        else:
+            self.delete_button.configure(state="disabled")
+            
+    def delete_config(self):
+        """Delete the selected custom config file"""
+        selected_file = self.config_var.get()
+        if not selected_file.startswith("custom_"):
+            return
+            
+        # Confirm deletion
+        if not self.confirm_deletion(selected_file):
+            return
+            
+        try:
+            # Delete the file
+            file_path = os.path.join("modules/paramslib", selected_file)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                
+                # Update combobox values
+                current_values = list(self.config_combobox.cget("values"))
+                current_values.remove(selected_file)
+                self.config_combobox.configure(values=current_values)
+                
+                # Select first available config
+                if current_values:
+                    self.config_var.set(current_values[0])
+                else:
+                    self.config_var.set("")
+                    
+                # Update delete button state
+                self.update_delete_button_state()
+                
+        except Exception as e:
+            print(f"Error deleting config file: {e}")
+            
+    def confirm_deletion(self, filename):
+        """Show confirmation dialog for file deletion"""
+        dialog = CTkMessageBox(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete {filename}?"
+        )
+        return dialog.get() == "OK"
+        
+    def center_dialog(self):
+        """Center the dialog on the screen"""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def get_conf_files(self):
+        """Get list of conf files from paramslib directory"""
+        conf_dir = "modules/paramslib"
+        if not os.path.exists(conf_dir):
+            return []
+            
+        conf_files = []
+        for file in os.listdir(conf_dir):
+            if file.endswith('.conf'):
+                conf_files.append(file)
+        return conf_files
+        
+    def define_custom_params(self):
+        """Handle Define Custom Parameters button click"""
+        dialog = CustomParametersDialog(self, self.config_var.get(), self.config_combobox, self.delete_button)
+        result = dialog.get()
+        if result:
+            # Update combobox values if new file was created
+            current_values = list(self.config_combobox.cget("values"))
+            if result not in current_values:
+                current_values.append(result)
+                self.config_combobox.configure(values=current_values)
+                self.config_var.set(result)
+                # Update delete button state after setting new config
+                self.update_delete_button_state()
+        
+    def ok_event(self):
+        """Handle OK button click"""
+        self.result = {
+            "plot_solution": self.plot_solution_var.get(),
+            "config_file": f"{os.path.dirname(os.path.abspath(__file__)).replace('common', 'modules/paramslib')}/{self.config_var.get()}".replace("\\", "/")
+        }
+        self.destroy()
+        

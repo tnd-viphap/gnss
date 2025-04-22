@@ -10,6 +10,7 @@ import common.helpers as helpers
 import common.parser as cfg
 from modules.rnx2rtkp import RNX2RTKPProcessor
 from modules.tps2rin import TPS2RINProcessor
+from modules.datastream.posfile import RTKPos
 
 
 class DashboardBindings:
@@ -167,27 +168,27 @@ class DashboardBindings:
             base_rover_pos_entry.delete(0, 'end')
             base_rover_pos_entry.insert(0, base_p_path)
 
-    def execute_rinex_rtk(self, execute_rinex_rtk_button, rover_obs_entry, base_obs_entry, base_rover_pos_entry):
+    def execute_rinex_rtk(self, execute_rinex_rtk_button, rover_obs_entry, base_obs_entry, base_rover_pos_entry, timestamp_component, e_component_entry, n_component_entry, u_component_entry, remove_rinex_checkbox, remove_rtk_checkbox, custom_config_file=None):
         """Execute RINEX RTK process"""
         execute_rinex_rtk_button.update()
         rnx2rtkp_processor = RNX2RTKPProcessor()
 
         # Get rover rinex file path
-        rover_rinex_file_path = rover_obs_entry.get()
-        base_rinex_file_path = base_obs_entry.get()
+        rover_obs_file_path = rover_obs_entry.get()
+        base_obs_file_path = base_obs_entry.get()
         base_rover_pos_file_path = base_rover_pos_entry.get()
         
         # Validate input files
-        if not rover_rinex_file_path or not base_rinex_file_path or not base_rover_pos_file_path:
+        if not rover_obs_file_path or not base_obs_file_path or not base_rover_pos_file_path:
             self.error_signal.emit("Please select all required files")
             return
         
         # Check if files exist
-        if not os.path.exists(rover_rinex_file_path):
-            self.error_signal.emit(f"Rover RINEX file not found: {os.path.split(rover_rinex_file_path)[1]}")
+        if not os.path.exists(rover_obs_file_path):
+            self.error_signal.emit(f"Rover RINEX file not found: {os.path.split(rover_obs_file_path)[1]}")
             return
-        if not os.path.exists(base_rinex_file_path):
-            self.error_signal.emit(f"Base RINEX file not found: {os.path.split(base_rinex_file_path)[1]}")
+        if not os.path.exists(base_obs_file_path):
+            self.error_signal.emit(f"Base RINEX file not found: {os.path.split(base_obs_file_path)[1]}")
             return
         if not os.path.exists(base_rover_pos_file_path):
             self.error_signal.emit(f"Base/Rover POS file not found: {os.path.split(base_rover_pos_file_path)[1]}")
@@ -195,9 +196,9 @@ class DashboardBindings:
         
         # Determine output directory based on rover file path
         try:
-            if "Rover1" in rover_rinex_file_path:
+            if "Rover1" in rover_obs_file_path:
                 output_pos_dir = os.path.join(os.path.dirname(__file__), "data", cfg.FTP_ROVERS1_SETTINGS[0]["local_dir"], "output")
-            elif "Rover2" in rover_rinex_file_path:
+            elif "Rover2" in rover_obs_file_path:
                 output_pos_dir = os.path.join(os.path.dirname(__file__), "data", cfg.FTP_ROVERS2_SETTINGS[0]["local_dir"], "output")
             else:
                 self.error_signal.emit("Invalid rover file path")
@@ -207,42 +208,65 @@ class DashboardBindings:
             os.makedirs(output_pos_dir, exist_ok=True)
             
             # Generate output filename
-            output_name = os.path.basename(rover_rinex_file_path).replace("rove", "output").split(".")[0] + ".pos"
+            output_name = os.path.basename(rover_obs_file_path).replace("rove", "output").split(".")[0] + ".pos"
             output_file_path = os.path.join(output_pos_dir, output_name)
             
             # Check if output file already exists
+            if "Rover1" in rover_obs_file_path:
+                east = cfg.DATA_ROVER1_EAST
+                north = cfg.DATA_ROVER1_NORTH
+                up = cfg.DATA_ROVER1_UP
+            elif "Rover2" in rover_obs_file_path:
+                east = cfg.DATA_ROVER2_EAST
+                north = cfg.DATA_ROVER2_NORTH
+                up = cfg.DATA_ROVER2_UP
             if os.path.exists(output_file_path):
-                self.error_signal.emit(f"Data already processed")
-                return
-                
-            # Execute the RTK processing
-            execute_rinex_rtk_button.configure(text="Executing...")
-            rnx2rtkp_processor.exec_rnx2rtkp(
-                rover_rinex_file_path,
-                base_rinex_file_path,
-                base_rover_pos_file_path,
-                output_file_path
-            )
+                rtk_pos = RTKPos(None)
+                result = rtk_pos.calculate_rtkp_output_file(output_file_path, None, east, north, up)
+                if result:
+                    timestamp_component.configure(text=result["timestamp"])
+                    e_component_entry.configure(text=f'{result["averageX"]} (mm)')
+                    n_component_entry.configure(text=f'{result["averageY"]} (mm)')
+                    u_component_entry.configure(text=f'{result["averageZ"]} (mm)')
+            else:
+                # Execute the RTK processing
+                execute_rinex_rtk_button.configure(text="Executing...")
+                rnx2rtkp_processor.exec_rnx2rtkp(
+                    rover_obs_file_path,
+                    base_obs_file_path,
+                    base_rover_pos_file_path,
+                    output_file_path,
+                    custom_config_file if custom_config_file else None
+                )
 
-            # Remove events and stats files
-            for file_path in os.listdir(output_pos_dir):
-                if file_path.endswith('.pos.stat') or file_path.endswith('_events.pos'):
-                    helpers.remove_file(os.path.join(output_pos_dir, file_path))
-            
+                # Processing output file (POS)
+                rtk_pos = RTKPos(None)
+                result = rtk_pos.calculate_rtkp_output_file(output_file_path, None, east, north, up)
+                if result:
+                    timestamp_component.configure(text=result["timestamp"])
+                    e_component_entry.configure(text=f'{result["averageX"]} (mm)')
+                    n_component_entry.configure(text=f'{result["averageY"]} (mm)')
+                    u_component_entry.configure(text=f'{result["averageZ"]} (mm)')
+
         except Exception as e:
             self.error_signal.emit(f"Error during RTK processing: {str(e)}")
         finally:
             time.sleep(1)
-            if self.remove_rinex_checkbox.get():
-                if os.path.exists(rover_rinex_file_path):
-                    helpers.remove_file(rover_rinex_file_path)
-                if os.path.exists(base_rinex_file_path):
-                    helpers.remove_file(base_rinex_file_path)
-                if os.path.exists(rover_rinex_file_path.split(".")[0] + "." + rover_rinex_file_path.split(".")[1].replace("o", "p")):
-                    helpers.remove_file(rover_rinex_file_path.split(".")[0] + "." + rover_rinex_file_path.split(".")[1].replace("o", "p"))
-                if os.path.exists(base_rinex_file_path.split(".")[0] + "." + base_rinex_file_path.split(".")[1].replace("o", "p")):
-                    helpers.remove_file(base_rinex_file_path.split(".")[0] + "." + base_rinex_file_path.split(".")[1].replace("o", "p"))
-            if self.remove_rtk_checkbox.get():
+            # Remove events and stats files
+            for file_path in os.listdir(output_pos_dir):
+                if file_path.endswith('.pos.stat') or file_path.endswith('_events.pos'):
+                    helpers.remove_file(os.path.join(output_pos_dir, file_path))
+            # Remove input files
+            if remove_rinex_checkbox.get():
+                if os.path.exists(rover_obs_file_path):
+                    helpers.remove_file(rover_obs_file_path)
+                if os.path.exists(base_obs_file_path):
+                    helpers.remove_file(base_obs_file_path)
+                if os.path.exists(rover_obs_file_path.split(".")[0] + "." + rover_obs_file_path.split(".")[1].replace("o", "p")):
+                    helpers.remove_file(rover_obs_file_path.split(".")[0] + "." + rover_obs_file_path.split(".")[1].replace("o", "p"))
+                if os.path.exists(base_obs_file_path.split(".")[0] + "." + base_obs_file_path.split(".")[1].replace("o", "p")):
+                    helpers.remove_file(base_obs_file_path.split(".")[0] + "." + base_obs_file_path.split(".")[1].replace("o", "p"))
+            if remove_rtk_checkbox.get():
                 if os.path.exists(output_file_path):
                     helpers.remove_file(output_file_path)
             execute_rinex_rtk_button.configure(text="Execute")

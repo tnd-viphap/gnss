@@ -6,12 +6,13 @@ import common.parser as cfg
 import common.helpers as helpers
 
 class RTKPos:
-    def __init__(self, local_dir):
-        self.local_dir = local_dir.replace("\\", "/")
-        if self.local_dir.split("/")[-1].startswith("Rover1"):
-            self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E1(mm)", "Delta_N1(mm)", "Delta_U1(mm)"]
-        elif self.local_dir.split("/")[-1].startswith("Rover2"):
-            self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E2(mm)", "Delta_N2(mm)", "Delta_U2(mm)"]
+    def __init__(self, local_dir=None):
+        if local_dir:
+            self.local_dir = local_dir.replace("\\", "/")
+            if self.local_dir.split("/")[-1].startswith("Rover1"):
+                self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E1(mm)", "Delta_N1(mm)", "Delta_U1(mm)"]
+            elif self.local_dir.split("/")[-1].startswith("Rover2"):
+                self.OUTPUT_FILE_HEADERS = ["TIMESTAMP", "Delta_E2(mm)", "Delta_N2(mm)", "Delta_U2(mm)"]
 
     # tao file output, neu file chua ton tai tao moi  them header cho file
     def create_output_file(self, file_path):
@@ -50,14 +51,15 @@ class RTKPos:
         file.close()
 
         file_path = file_path.replace("\\", "/")
-        log_file = open(log_path, "w")
-        log_data = [
-            {
-                "file_path": file_path
-            }
-        ]
-        log_file.write(json.dumps(log_data))
-        log_file.close()
+        if log_path:
+            log_file = open(log_path, "w")
+            log_data = [
+                {
+                    "file_path": file_path
+                }
+            ]
+            log_file.write(json.dumps(log_data))
+            log_file.close()
 
         total_e = total_n = total_u = count = 0
         utc_time = datetime.min

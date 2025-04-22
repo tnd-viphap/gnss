@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import time
+import threading
 
 import customtkinter as ctk
 from PIL import Image
@@ -11,7 +12,7 @@ from bindings import DashboardBindings
 from common.fonts.font_manager import FontManager
 from common.helpers import Signal
 from common.widgets import (BatchDragDropEntry, CTkMessageBox, CTkNotification,
-                            DeviceSelectionDialog, DragDropEntry)
+                            DeviceSelectionDialog, DragDropEntry, RTKSettingsDialog)
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 
@@ -29,8 +30,14 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             self.device_db = None
             return
         
+        # Initialize RTK settings
+        self.rtk_settings = {
+            "plot_solution": False,
+            "config_file": ""
+        }
+        
         # Configure window
-        self.title("Extended RTK Positioning")
+        self.title("VINIG")
         self.iconbitmap("assets/Logo.ico")
         
         # Get screen dimensions and DPI
@@ -62,7 +69,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
                                      size=(20, 20))
         self.nav_title = ctk.CTkLabel(
             self.navigation_frame,
-            text="Extended RTK",
+            text="VINIG",
             font=self.font_manager.get_font("toolbar-button"),
             image=self.logo_image,
             compound="left",
@@ -237,8 +244,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.single_process_switch = ctk.CTkSwitch(
             self.mode_switches_frame,
             text="",
-            onvalue=True,
-            offvalue=False
+            onvalue="Single Process",
+            offvalue="Batch Process"
         )
         self.single_process_switch.grid(row=0, column=1, padx=(0, 20))
         self.single_process_switch.select()  # Start with Single Process selected
@@ -254,14 +261,14 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.batch_process_switch = ctk.CTkSwitch(
             self.mode_switches_frame,
             text="",
-            onvalue=True,
-            offvalue=False
+            onvalue="Batch Process",
+            offvalue="Single Process"
         )
         self.batch_process_switch.grid(row=0, column=3)
         
         # Bind switch events
-        self.single_process_switch.bind("<ButtonRelease-1>", lambda event: self.switch_event(self.single_process_switch))
-        self.batch_process_switch.bind("<ButtonRelease-1>", lambda event: self.switch_event(self.batch_process_switch))
+        self.single_process_switch.bind("<ButtonRelease-1>", lambda event=None: self.switch_event(event, self.single_process_switch))
+        self.batch_process_switch.bind("<ButtonRelease-1>", lambda event=None: self.switch_event(event, self.batch_process_switch))
         
         # Create frames container for process frames
         self.process_frames_container = ctk.CTkFrame(self.quick_processing_frame, fg_color="transparent")
@@ -372,12 +379,36 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.rinex_to_rtk_frame.pack(fill="x", padx=15, pady=15)
         
         # Rinex to RTK header
+        self.rinex_to_rtk_header_frame = ctk.CTkFrame(self.rinex_to_rtk_frame, fg_color="transparent")
+        self.rinex_to_rtk_header_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        # Rinex to RTK header label
         ctk.CTkLabel(
-            self.rinex_to_rtk_frame,
+            self.rinex_to_rtk_header_frame,
             text="Rinex to RTK Position",
             font=self.font_manager.get_font("content-header-l2"),
             anchor="w"
-        ).pack(padx=15, pady=(15, 10), anchor="w")
+        ).pack(side="left", padx=0, pady=(15, 10), anchor="w")
+
+        # Settings image
+        self.settings_image = ctk.CTkImage(
+            light_image=Image.open("assets/Settings.png"),
+            dark_image=Image.open("assets/Settings.png"),
+            size=(16, 16)
+        )
+
+        # Settings for Rinex to RTK
+        ctk.CTkButton(
+            self.rinex_to_rtk_header_frame,
+            text="",
+            image=self.settings_image,
+            width=32,
+            height=32,
+            font=self.font_manager.get_font("content-body"),
+            fg_color="transparent",
+            hover_color=("gray70", "gray30"),
+            command=self.open_rtk_settings
+        ).pack(side="right", anchor="e")
         
         # Rover Obs entry
         self.rover_obs_frame = ctk.CTkFrame(self.rinex_to_rtk_frame, fg_color="transparent")
@@ -467,21 +498,23 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.checkboxes_frame = ctk.CTkFrame(self.rinex_to_rtk_frame, fg_color="transparent")
         self.checkboxes_frame.pack(fill="x", padx=15, pady=(0, 15))
         
-        self.remove_rinex_var = ctk.BooleanVar(value=False)
+        #self.remove_rinex_var = ctk.BooleanVar(value=False)
         self.remove_rinex_checkbox = ctk.CTkCheckBox(
             self.checkboxes_frame,
             text="Remove RINEX outputs",
-            variable=self.remove_rinex_var,
-            font=self.font_manager.get_font("content-body")
+            font=self.font_manager.get_font("content-body"),
+            onvalue=True,
+            offvalue=False
         )
         self.remove_rinex_checkbox.pack(side="left", padx=(0, 20))
         
-        self.remove_rtk_var = ctk.BooleanVar(value=False)
+        #self.remove_rtk_var = ctk.BooleanVar(value=False)
         self.remove_rtk_checkbox = ctk.CTkCheckBox(
             self.checkboxes_frame,
             text="Remove RTK outputs",
-            variable=self.remove_rtk_var,
-            font=self.font_manager.get_font("content-body")
+            font=self.font_manager.get_font("content-body"),
+            onvalue=True,
+            offvalue=False
         )
         self.remove_rtk_checkbox.pack(side="left")
 
@@ -613,25 +646,162 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         )
         self.batch_execute_button.pack(side="left", padx=10, pady=(0, 0))
 
+        # Create Solution of Positioning frame
+        self.solution_frame = ctk.CTkFrame(self.single_frame)
+        self.solution_frame.pack(fill="x", padx=15, pady=15)
+        
+        # Add header label for Solution frame
+        ctk.CTkLabel(
+            self.solution_frame,
+            text="Solution of Positioning",
+            font=self.font_manager.get_font("content-header-l2"),
+            anchor="w"
+        ).pack(padx=15, pady=(15, 10), anchor="w")
+        
+        # Create frame for solution components
+        self.solution_components_frame = ctk.CTkFrame(self.solution_frame, fg_color="transparent")
+        self.solution_components_frame.pack(fill="x", padx=15, pady=(0, 15))
+
+        # Add timestamp component
+        self.timestamp_label = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="Timestamp:",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.timestamp_label.grid(row=0, column=0, padx=(0, 10), pady=5)
+
+        self.timestamp_value = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="None",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.timestamp_value.grid(row=0, column=1, padx=0, pady=5, sticky="w")
+
+        # Add E component
+        self.e_component_label = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="E:",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.e_component_label.grid(row=1, column=0, padx=(0, 10), pady=5, sticky="w")
+        
+        self.e_component_value = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="0.000",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.e_component_value.grid(row=1, column=1, padx=(0, 20), pady=5, sticky="w")
+        
+        # Add N component
+        self.n_component_label = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="N:",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.n_component_label.grid(row=2, column=0, padx=(0, 10), pady=5, sticky="w")
+        
+        self.n_component_value = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="0.000",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.n_component_value.grid(row=2, column=1, padx=(0, 20), pady=5, sticky="w")
+        
+        # Add U component
+        self.u_component_label = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="U:",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.u_component_label.grid(row=3, column=0, padx=(0, 10), pady=5, sticky="w")
+        
+        self.u_component_value = ctk.CTkLabel(
+            self.solution_components_frame,
+            text="0.000",
+            font=self.font_manager.get_font("content-body")
+        )
+        self.u_component_value.grid(row=3, column=1, padx=(0, 20), pady=5, sticky="w")
+
     def error_event(self, error_msg):
         """Handle error signal"""
         dialog = CTkMessageBox(self, "Error", error_msg)
         dialog.wait_window()  # Wait for dialog to close
 
-    def switch_event(self, switch_button):
-        if switch_button.get() == "Single":
+    def switch_event(self, event, switch_button):
+        if switch_button.get() == "Single Process":
             self.dashboard_bindings.handle_single_switch(self.single_process_switch, self.batch_process_switch, self.single_frame, self.batch_frame)
-        elif switch_button.get() == "Batch":
+        elif switch_button.get() == "Batch Process":
             self.dashboard_bindings.handle_batch_switch(self.single_process_switch, self.batch_process_switch, self.single_frame, self.batch_frame)
 
     def tps_rinex_button_event(self):
-        self.dashboard_bindings.execute_tps_rinex(self.execute_tps_rinex_button, self.execute_tps_rinex_frame, self.base_tps_entry, self.rover_tps_entry, self.base_obs_entry, self.rover_obs_entry, self.base_rover_pos_entry)
-        CTkNotification(self, "info", "TPS RINEX conversion successful", "right_bottom")
+        # Disable the button while processing
+        self.execute_tps_rinex_button.configure(state="disabled")
+        
+        # Create and start the thread
+        thread = threading.Thread(target=self._tps_rinex_thread)
+        thread.daemon = True  # Thread will be killed when main program exits
+        thread.start()
+
+    def _tps_rinex_thread(self):
+        try:
+            self.dashboard_bindings.execute_tps_rinex(
+                self.execute_tps_rinex_button, 
+                self.execute_tps_rinex_frame, 
+                self.base_tps_entry, 
+                self.rover_tps_entry, 
+                self.base_obs_entry, 
+                self.rover_obs_entry, 
+                self.base_rover_pos_entry
+            )
+            # Show notification in the main thread
+            self.after(0, lambda: CTkNotification(self, "info", "TPS to RINEX conversion successful", "right_bottom"))
+        finally:
+            # Re-enable the button in the main thread
+            self.execute_tps_rinex_button.configure(state="normal")
 
     def rinex_rtk_button_event(self):
-        self.dashboard_bindings.execute_rinex_rtk(self.execute_rinex_rtk_button, self.rover_obs_entry, self.base_obs_entry, self.base_rover_pos_entry)
-        CTkNotification(self, "info", "RINEX to RTK Position conversion successful", "right_bottom")
+        # Disable the button while processing
+        self.execute_rinex_rtk_button.configure(state="disabled")
         
+        # Create and start the thread
+        thread = threading.Thread(target=self._rinex_rtk_thread)
+        thread.daemon = True  # Thread will be killed when main program exits
+        thread.start()
+
+    def _rinex_rtk_thread(self):
+        try:
+            self.dashboard_bindings.execute_rinex_rtk(
+                self.execute_rinex_rtk_button, 
+                self.rover_obs_entry, 
+                self.base_obs_entry, 
+                self.base_rover_pos_entry,
+                self.timestamp_value,
+                self.e_component_value,
+                self.n_component_value,
+                self.u_component_value,
+                self.remove_rinex_checkbox,
+                self.remove_rtk_checkbox,
+                self.rtk_settings["config_file"]
+            )
+            # Show notification in the main thread
+            self.after(0, lambda: CTkNotification(self, "info", "RINEX to RTK Position conversion successful", "right_bottom"))
+        finally:
+            # Re-enable the button in the main thread
+            self.execute_rinex_rtk_button.configure(state="normal")
+            self.execute_rinex_rtk_button.configure(text="Execute")
+
+    def open_rtk_settings(self):
+        """Open RTK settings dialog"""
+        dialog = RTKSettingsDialog(self, self.rtk_settings)
+        
+        def on_dialog_close(event):
+            result = dialog.get()
+            if result:
+                self.rtk_settings = result
+        
+        # Bind to the destroy event
+        dialog.bind('<Destroy>', on_dialog_close)
+
     ###### Get Data ######
 
     ###### Plot ######
